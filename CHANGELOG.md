@@ -2,6 +2,11 @@
 
 ## [1.5.1] - 2026-10-18
 
+### Added
+- **Eigenes Icon/Logo** für HACS und die Integrationsliste in Home Assistant (`custom_components/ha_energy_dashboard/brand/`:
+  `icon.png`, `icon@2x.png`, `logo.png`, `logo@2x.png`). Funktioniert ab HA 2026.3 automatisch, kein externer
+  PR bei `home-assistant/brands` nötig (lokale Bilder haben seitdem Vorrang vor der Brands-CDN).
+
 ### Fixed
 - **Bug:** Wärmepumpe-Tab zeigte bei Gestern/Woche/Monat/Jahr für "Heizen"/"Warmwasser" (Aufschlüsselung
   und Diagramm) nur ~0,00x kWh statt realistischer Werte — ein fest einprogrammiertes `/1000` ("Sensor in
