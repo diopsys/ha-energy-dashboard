@@ -116,6 +116,7 @@ body {
 .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
 .stat-card.consumption::before { background: var(--accent-red); }
 .stat-card.production::before { background: var(--accent-green); }
+.stat-card.imported::before { background: #f97316; }
 .stat-card.exported::before { background: var(--accent-blue); }
 .stat-card.self-consumed::before { background: var(--accent-purple); }
 .stat-card.heatpump::before { background: #f97316; }
@@ -633,6 +634,38 @@ body {
 .wp-bar-heating { background: #f97316; }
 .wp-bar-dhw { background: #3b82f6; }
 .wp-breakdown-value { flex: 0 0 70px; font-size: 0.8rem; font-weight: 600; text-align: right; }
+
+/* ── Gas Tab (nutzt die wp-* Klassen) ── */
+.wp-stat-card.gas-cost { border-color: #f59e0b; }
+.wp-stat-card.gas-cost .wp-stat-value { color: #f59e0b; }
+.gas-note { font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.5rem; }
+
+/* ── Wasser, Kosten-Erweiterung, Tarife ── */
+.wp-stats-grid.water-stats-grid { grid-template-columns: repeat(5, 1fr); }
+.wp-stat-card.water-cost { border-color: #38bdf8; }
+.wp-stat-card.water-cost .wp-stat-value { color: #38bdf8; }
+.wp-section-title.water-section-title { color: #38bdf8; }
+.invoice-summary-card.gas .invoice-summary-value { color: #f59e0b; }
+.invoice-summary-card.water .invoice-summary-value { color: #38bdf8; }
+.inv-subtotal-row td { font-weight: 600; border-top: 1px solid var(--border-primary); }
+/* ☰-Knopf für das HA-Menü, nur in schmaler Ansicht wie HA selbst */
+.header-left { display: flex; align-items: center; gap: 0.5rem; }
+.ha-menu-btn {
+  display: none; align-items: center; justify-content: center;
+  width: 40px; height: 40px; padding: 0; border: none; border-radius: 8px;
+  background: transparent; color: var(--text-primary); cursor: pointer;
+}
+.ha-menu-btn:hover { background: var(--bg-card); }
+@media (max-width: 870px) { .ha-menu-btn { display: flex; } }
+@media (max-width: 768px) { .energy-logo span { display: none; } }
+/* 6 Kostenkacheln als 2 × 3 (Handy: 2 Spalten über die Media-Query weiter unten) */
+.invoice-summary { grid-template-columns: repeat(3, 1fr); }
+.tarif-group {
+  font-size: 0.8rem; font-weight: 600; color: var(--text-primary);
+  margin: 1rem 0 0.25rem; padding-top: 0.5rem; border-top: 1px solid var(--border-primary);
+}
+.tarif-hint { display: block; margin-bottom: 0.25rem; }
+@media (max-width: 900px) { .wp-stats-grid.water-stats-grid { grid-template-columns: repeat(2, 1fr); } }
 
 /* ── Energy Saver: pause animations when not needed ── */
 .page-hidden *,

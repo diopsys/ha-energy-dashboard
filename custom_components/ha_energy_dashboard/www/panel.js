@@ -13,7 +13,7 @@ class EnergyPanel extends HTMLElement {
           display: block;
         }
       </style>
-      <iframe src="/ha-energy-dashboard/index.html"></iframe>
+      <iframe src="/ha-energy-dashboard/index.html?t=${Date.now()}"></iframe>
     `;
     this._iframe = this.shadowRoot.querySelector('iframe');
     this._resize = () => {
