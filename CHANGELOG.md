@@ -12,7 +12,14 @@
   eigene Template-Kostensensoren mit derselben Entitäts-ID ohne Bruch ablösen.
 - **Dynamische Preise** für Einspeisung und Gas (neben Strom), Einheit EUR/kWh oder ct/kWh wird erkannt.
 - Einstellungen: Rubrik **Sonstiges** (Referenz-Limit, Außentemperatur, PV-Prognose, Statistik gültig ab),
-  optionale Felder eingeklappt unter **Erweitert**, Reihenfolge der Kacheln als Liste mit ▲/▼.
+  optionale Felder eingeklappt unter **Erweitert**, Kacheln als Liste mit Haken (ein-/ausblenden) und ▲/▼.
+- **Sprachauswahl Deutsch/Englisch** (Anzeige → Sprache): Oberfläche, Diagramme, Kostenseite, Hinweistexte und
+  Namen der Kostensensoren. Übersetzungen in `www/i18n.js` (Schlüssel = Text im Quelltext). Deutsch mit
+  Dezimalkomma und numerischen Datumsachsen; bisher englische Texte („Sensors“, „Custom“, „Reset Zoom“,
+  „EXPORT/IMPORT“) sind auf Deutsch übersetzt, Texte ohne Umlaute („fuer“, „Zaehlerstand“) korrigiert.
+- **Verbrauch + Wärmepumpe in einer Kachel**: Mit aktivierter Wärmepumpe zeigt die Verbrauchs-Kachel „Gesamt“
+  und darunter „Wärme“ (abschaltbar über den Haken), statt einer eigenen Wärmepumpen-Kachel.
+- **Akzentfarbe** (früher „Logo-Farbe“) gilt für Logo und aktiven Reiter, wie bei anderen eigenen Panels.
 
 ### Changed
 - **Tarife ohne `input_number`-Verknüpfung**: feste Preise in den Einstellungen, Sensoren nur noch für

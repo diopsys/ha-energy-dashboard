@@ -143,13 +143,28 @@ def feed_in_rate_eur(hass: HomeAssistant, settings: dict) -> float:
     return satz1 / 100
 
 
+# Sensornamen je Sprache (Einstellung „Sprache“ unter Anzeige). Die Entitäts-ID
+# entsteht beim ersten Anlegen aus dem Namen und bleibt danach gleich.
+NAMES = {
+    "strom": {"de": "Stromkosten gesamt", "en": "Electricity costs total"},
+    "gas": {"de": "Gaskosten gesamt", "en": "Gas costs total"},
+    "wasser": {"de": "Wasserkosten gesamt", "en": "Water costs total"},
+    "gas_kwh": {"de": "Gasverbrauch gesamt", "en": "Gas consumption total"},
+    "einspeisung": {"de": "Einspeisevergütung", "en": "Feed-in tariff"},
+}
+
+
+def _name(key: str, settings: dict) -> str:
+    lang = "en" if (settings.get("ui") or {}).get("language") == "en" else "de"
+    return NAMES[key][lang]
+
+
 # ── Sensor-Arten ───────────────────────────────────────────────
 
 class CostKind:
     """Beschreibt Quelle und Preise einer Kostenart."""
 
     key: str
-    name: str
 
     def meter(self, settings: dict) -> str:
         raise NotImplementedError
@@ -163,7 +178,7 @@ class CostKind:
 
 
 class PowerCost(CostKind):
-    key, name = "strom", "Stromkosten gesamt"
+    key = "strom"
 
     def meter(self, settings):
         return ((settings.get("entities") or {}).get("cumulative") or {}).get("grid_import") or ""
@@ -179,7 +194,7 @@ class PowerCost(CostKind):
 
 
 class GasCost(CostKind):
-    key, name = "gas", "Gaskosten gesamt"
+    key = "gas"
 
     def meter(self, settings):
         return ((settings.get("entities") or {}).get("gas") or {}).get("meter") or ""
@@ -196,7 +211,7 @@ class GasCost(CostKind):
 
 
 class WaterCost(CostKind):
-    key, name = "wasser", "Wasserkosten gesamt"
+    key = "wasser"
 
     def meter(self, settings):
         return ((settings.get("entities") or {}).get("water") or {}).get("meter") or ""
@@ -250,6 +265,11 @@ class _SettingsMixin:
 
     _attr_should_poll = False
 
+    @property
+    def name(self) -> str:
+        """Name in der eingestellten Sprache."""
+        return _name(self._name_key, self._settings)
+
     def _watched_entities(self) -> list[str]:
         raise NotImplementedError
 
@@ -290,11 +310,14 @@ class EnergyCostSensor(_SettingsMixin, RestoreSensor):
     _attr_native_unit_of_measurement = "EUR"
     _attr_icon = "mdi:cash-minus"
 
+    @property
+    def _name_key(self) -> str:
+        return self._kind.key
+
     def __init__(self, hass: HomeAssistant, kind: CostKind, settings: dict) -> None:
         self.hass = hass
         self._kind = kind
         self._settings = settings
-        self._attr_name = kind.name
         self._attr_unique_id = f"{DOMAIN}_{kind.key}_kosten"
         self._total: float | None = None
         self._meter_last: float | None = None
@@ -392,7 +415,7 @@ class GasEnergySensor(_SettingsMixin, SensorEntity):
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_icon = "mdi:fire"
-    _attr_name = "Gasverbrauch gesamt"
+    _name_key = "gas_kwh"
     _attr_unique_id = f"{DOMAIN}_gas_kwh"
 
     def __init__(self, hass: HomeAssistant, settings: dict) -> None:
@@ -426,7 +449,7 @@ class FeedInRateSensor(_SettingsMixin, SensorEntity):
 
     _attr_native_unit_of_measurement = "EUR/kWh"
     _attr_icon = "mdi:cash-plus"
-    _attr_name = "Einspeisevergütung"
+    _name_key = "einspeisung"
     _attr_unique_id = f"{DOMAIN}_einspeiseverguetung"
 
     def __init__(self, hass: HomeAssistant, settings: dict) -> None:

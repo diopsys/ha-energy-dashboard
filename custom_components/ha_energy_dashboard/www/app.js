@@ -926,8 +926,8 @@ class EnergyDashboard {
     // beim Austausch Reste der Tagesbalken mit alter Breite weiter
     this._chartFine = useFine ? {
       minutes, from: fine.from, to: fine.to,
-      unitShort: minutes >= 1440 ? 'kWh/Tag' : 'kWh/h',
-      unit: minutes >= 1440 ? 'kWh/Tag' : `kWh/h, ${minutes >= 60 ? '1 h' : minutes + ' min'}`,
+      unitShort: minutes >= 1440 ? this.t('kWh/Tag') : 'kWh/h',
+      unit: minutes >= 1440 ? this.t('kWh/Tag') : `kWh/h, ${minutes >= 60 ? '1 h' : minutes + ' min'}`,
       cons: this.fineSeries(fine.cons, fine.consScale, minutes, fine.from),
       prod: this.fineSeries(fine.prod, fine.prodScale, minutes, fine.from),
     } : null;
@@ -1321,7 +1321,7 @@ class EnergyDashboard {
     const fine = isKw ? null : this._chartFine;
     const consumption = isKw ? (this.chartConsumptionKw || []) : (fine ? fine.cons : this.chartConsumption);
     const production = isKw ? (this.chartProductionKw || []) : (fine ? fine.prod : this.chartProduction);
-    const barUnit = fine ? fine.unit : (isKw && this._kwDailyPeak ? 'kW, Tagesspitze' : unitLabel);
+    const barUnit = fine ? fine.unit : (isKw && this._kwDailyPeak ? this.t('kW, Tagesspitze') : unitLabel);
     const heatpump = isKw || fine ? [] : (this.chartHeatpump || []);
     const chartPeriod = this.getChartAggregation(this.currentPeriod);
     const timeUnitMap = { hour: 'hour', day: 'day', month: 'month' };
@@ -1341,11 +1341,11 @@ class EnergyDashboard {
       ...(fcBand ? [
         { type: 'line', label: 'Prognose p10', data: fcBand.map(b => ({ x: b.x, y: b.lo })),
           borderWidth: 0, pointRadius: 0, fill: false, stack: 'fc-lo', order: 0 },
-        { type: 'line', label: 'Prognose p10–p90', data: fcBand.map(b => ({ x: b.x, y: b.hi })),
+        { type: 'line', label: this.t('Prognose p10–p90'), data: fcBand.map(b => ({ x: b.x, y: b.hi })),
           borderWidth: 0, pointRadius: 0, fill: '-1', backgroundColor: 'rgba(227, 179, 65, 0.15)',
           stack: 'fc-hi', order: 0 },
       ] : []),
-      { type: 'line', label: `PV-Prognose (${fcKw && !isKw ? 'kWh/h' : unitLabel})`, data: fcData,
+      { type: 'line', label: `${this.t('PV-Prognose')} (${fcKw && !isKw ? 'kWh/h' : unitLabel})`, data: fcData,
         _unit: fcKw && !isKw ? 'kWh/h' : undefined,
         borderColor: '#e3b341', backgroundColor: '#e3b341', borderWidth: 2, borderDash: [6, 4],
         pointRadius: 0, tension: 0.3, fill: false, stack: 'forecast', order: 0 },
@@ -1364,7 +1364,7 @@ class EnergyDashboard {
       data: {
         datasets: [
           {
-            label: `Verbrauch (${barUnit})`,
+            label: `${this.t('Verbrauch')} (${barUnit})`,
             data: consumption,
             _unit: fine ? fine.unitShort : undefined,
             backgroundColor: consBg,
@@ -1376,7 +1376,7 @@ class EnergyDashboard {
             stack: 'main',
           },
           {
-            label: `Erzeugung (${barUnit})`,
+            label: `${this.t('Erzeugung')} (${barUnit})`,
             data: production,
             _unit: fine ? fine.unitShort : undefined,
             backgroundColor: isKw ? 'rgba(63, 185, 80, 0.7)' : 'rgba(63, 185, 80, 0.55)',
@@ -1388,7 +1388,7 @@ class EnergyDashboard {
             stack: 'production',
           },
           ...(!isKw && heatpump.length > 0 ? [{
-            label: `Wärmepumpe (${unitLabel})`,
+            label: `${this.t('Wärmepumpe')} (${unitLabel})`,
             data: heatpump,
             backgroundColor: 'rgba(249, 115, 22, 0.55)',
             borderColor: '#f97316',
@@ -1419,7 +1419,7 @@ class EnergyDashboard {
                   .filter(l => l.text !== 'Prognose p10');  // Hilfslinie des Prognose-Bands
                 if (isKw) {
                   labels.push({
-                    text: `Referenz-Limit (${refKw} kW)`,
+                    text: `${this.t('Referenz-Limit')} (${refKw} kW)`,
                     fillStyle: 'transparent',
                     strokeStyle: '#d29922',
                     lineWidth: 2,
@@ -1449,7 +1449,7 @@ class EnergyDashboard {
             },
           },
           referenceLine: isKw
-            ? { value: refKw, color: '#d29922', label: `Referenz-Limit ${refKw} kW` }
+            ? { value: refKw, color: '#d29922', label: `${this.t('Referenz-Limit')} ${refKw} kW` }
             : { value: 0 },
           zoom: {
             limits: {
@@ -1477,7 +1477,7 @@ class EnergyDashboard {
               unit: timeUnit,
               tooltipFormat: 'dd.MM.yyyy HH:mm',
               displayFormats: {
-                minute: 'HH:mm', day: 'dd MMM', month: 'MMM yyyy',
+                minute: 'HH:mm', day: this.axisDay, month: this.axisMonth,
                 hour: view && view.max - view.min > 86400000 ? 'dd.MM. HH:mm' : 'HH:mm',
               },
             },
@@ -1699,7 +1699,7 @@ class EnergyDashboard {
       data: {
         datasets: [
           {
-            label: 'Heizen (kWh)',
+            label: this.t('Heizen (kWh)'),
             data: heatingData,
             backgroundColor: 'rgba(249, 115, 22, 0.65)',
             borderColor: '#f97316',
@@ -1710,7 +1710,7 @@ class EnergyDashboard {
             stack: 'wp',
           },
           {
-            label: 'Warmwasser (kWh)',
+            label: this.t('Warmwasser (kWh)'),
             data: dhwData,
             backgroundColor: 'rgba(59, 130, 246, 0.65)',
             borderColor: '#3b82f6',
@@ -1736,7 +1736,7 @@ class EnergyDashboard {
               label: (ctx) => `${ctx.dataset.label}: ${(ctx.parsed.y ?? 0).toFixed(2)} kWh`,
               footer: (items) => {
                 const sum = items.reduce((s, i) => s + (i.parsed.y ?? 0), 0);
-                return `Gesamt: ${sum.toFixed(2)} kWh`;
+                return this.t('Gesamt: {v} kWh', { v: this.num(sum.toFixed(2)) });
               },
             },
           },
@@ -1744,7 +1744,7 @@ class EnergyDashboard {
         scales: {
           x: {
             type: 'time',
-            time: { unit: timeUnit, tooltipFormat: 'dd.MM.yyyy HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM', month: 'MMM yyyy' } },
+            time: { unit: timeUnit, tooltipFormat: 'dd.MM.yyyy HH:mm', displayFormats: { hour: 'HH:mm', day: this.axisDay, month: this.axisMonth } },
             min: start.getTime(), max: end.getTime(),
             ticks: { color: '#8b949e', maxTicksLimit: 14, font: { size: 10 }, maxRotation: 45 },
             grid: { color: 'rgba(48, 54, 61, 0.3)' },
@@ -1872,7 +1872,7 @@ class EnergyDashboard {
   // „1 Tag“ / „n Tage“
   fmtDays(days) {
     const n = Math.round(days);
-    return `${n} ${n === 1 ? 'Tag' : 'Tage'}`;
+    return n === 1 ? this.t('1 Tag') : `${n} ${this.t('Tage')}`;
   }
 
   // Anteiliger Grundpreis für den Zeitraum (Monat = 365,25 / 12 Tage)
@@ -1907,9 +1907,8 @@ class EnergyDashboard {
       this.setEl('gas-cost', cost.toFixed(2));
       this.setEl('gas-avg', (kwh / Math.max(1, days)).toFixed(2));
       this.setEl('gas-note',
-        `Umrechnung ${kwhPerM3.toFixed(4)} kWh/m³ (Brennwert × Zustandszahl) · ` +
-        `Arbeitspreis ${preisCt} ct/kWh · Grundpreis ${grundMonat} €/Monat anteilig · ` +
-        `gerechnet mit den aktuellen Preisen, auch für vergangene Zeiträume.`);
+        this.t('Umrechnung {f} kWh/m³ (Brennwert × Zustandszahl) · Arbeitspreis {p} ct/kWh · Grundpreis {g} €/Monat anteilig · gerechnet mit den aktuellen Preisen, auch für vergangene Zeiträume.',
+          { f: this.num(kwhPerM3.toFixed(4)), p: this.num(preisCt), g: this.num(grundMonat) }));
 
       const tempStats = g.outdoor ? await this.getStatistics(g.outdoor, start, end, agg) : [];
       const temps = tempStats
@@ -1917,7 +1916,7 @@ class EnergyDashboard {
         .map(s => ({ x: new Date(s.start).getTime(), y: s.mean }));
       this.renderMeterChart({
         canvasId: 'gas-chart', chartKey: '_gasChart',
-        label: 'Gas', unit: 'kWh', digits: 2,
+        label: this.t('Gas'), unit: 'kWh', digits: 2,
         color: '245, 158, 11', border: '#f59e0b',
         bars: series.bars.map(b => ({ x: b.x, y: b.y * kwhPerM3 })),
         temps, start, end, agg,
@@ -1960,14 +1959,14 @@ class EnergyDashboard {
       this.setEl('water-cost', (frisch + abwasser).toFixed(2));
       this.setEl('water-avg', Math.round(m3 * 1000 / Math.max(1, days)).toString());
       this.setEl('water-note',
-        `Frischwasser ${preis} €/m³ + Grundpreis ${grund} €/Monat · ` +
-        `Abwasser ${abwPreis} €/m³ (nach Frischwasser-m³)` +
-        (abwGrund > 0 ? ` + Grundpreis ${abwGrund} €/Monat` : '') +
-        ` · Grundpreise anteilig · gerechnet mit den aktuellen Preisen.`);
+        this.t('Frischwasser {p} €/m³ + Grundpreis {g} €/Monat · Abwasser {a} €/m³ (nach Frischwasser-m³)',
+          { p: this.num(preis), g: this.num(grund), a: this.num(abwPreis) }) +
+        (abwGrund > 0 ? this.t(' + Grundpreis {g} €/Monat', { g: this.num(abwGrund) }) : '') +
+        this.t(' · Grundpreise anteilig · gerechnet mit den aktuellen Preisen.'));
 
       this.renderMeterChart({
         canvasId: 'water-chart', chartKey: '_waterChart',
-        label: 'Wasser', unit: 'l', digits: 0,
+        label: this.t('Wasser'), unit: 'l', digits: 0,
         color: '56, 189, 248', border: '#38bdf8',
         bars: series.bars.map(b => ({ x: b.x, y: b.y * 1000 })),
         temps: null, start, end, agg,
@@ -2001,7 +2000,7 @@ class EnergyDashboard {
     const scales = {
       x: {
         type: 'time',
-        time: { unit: timeUnit, tooltipFormat: 'dd.MM.yyyy HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM', month: 'MMM yyyy' } },
+        time: { unit: timeUnit, tooltipFormat: 'dd.MM.yyyy HH:mm', displayFormats: { hour: 'HH:mm', day: this.axisDay, month: this.axisMonth } },
         min: start.getTime(), max: end.getTime(),
         ticks: { color: '#8b949e', maxTicksLimit: 14, font: { size: 10 }, maxRotation: 45 },
         grid: { color: 'rgba(48, 54, 61, 0.3)' },
@@ -2017,7 +2016,7 @@ class EnergyDashboard {
     if (temps) {
       datasets.push({
         type: 'line',
-        label: 'Außentemperatur (°C)',
+        label: this.t('Außentemperatur (°C)'),
         data: temps,
         yAxisID: 'yTemp',
         borderColor: '#3b82f6',
@@ -2221,7 +2220,7 @@ class EnergyDashboard {
     if (warnEl) {
       if (dc && dc.missingSlots > 0) {
         const missingKwh = Math.max(0, imported - dc.totalKwh);
-        warnEl.textContent = dc.missingSlots + ' Intervalle ohne dyn. Preis (' + missingKwh.toFixed(1) + ' kWh mit Fixpreis ' + (fixedRate * 100).toFixed(2) + ' ct/kWh berechnet)';
+        warnEl.textContent = `${dc.missingSlots} ${this.t('Intervalle ohne dyn. Preis')} (${this.num(missingKwh.toFixed(1))} ${this.t('kWh mit Fixpreis')} ${this.num((fixedRate * 100).toFixed(2))} ct/kWh ${this.t('berechnet')})`;
         warnEl.style.display = '';
       } else {
         warnEl.style.display = 'none';
@@ -2229,7 +2228,7 @@ class EnergyDashboard {
     }
 
     // Grundgebühr row
-    this.setEl('inv-base-fee-monthly', monthlyBaseFee.toFixed(2) + ' €/Monat');
+    this.setEl('inv-base-fee-monthly', this.num(monthlyBaseFee.toFixed(2)) + ' ' + this.t('€/Monat'));
     this.setEl('inv-base-fee-days', this.fmtDays(periodDays));
     this.setEl('inv-base-fee-cost', eur(proratedBaseFee));
     const baseFeeRow = document.getElementById('inv-base-fee-row');
@@ -2364,7 +2363,7 @@ class EnergyDashboard {
         ctx.font = '10px sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.6)';
         ctx.textAlign = 'center';
-        ctx.fillText('Jetzt', x, top - 4);
+        ctx.fillText(this.t('Jetzt'), x, top - 4);
         ctx.restore();
       },
     };
@@ -2374,7 +2373,7 @@ class EnergyDashboard {
       data: {
         datasets: [
           {
-            label: 'Verbrauch (kWh)',
+            label: this.t('Verbrauch (kWh)'),
             data: consumptionData,
             backgroundColor: 'rgba(248, 81, 73, 0.7)',
             borderColor: '#f85149',
@@ -2386,7 +2385,7 @@ class EnergyDashboard {
             order: 2,
           },
           {
-            label: 'Strompreis (ct/kWh)',
+            label: this.t('Strompreis (ct/kWh)'),
             data: rateData,
             type: 'line',
             segment: {
@@ -2432,11 +2431,11 @@ class EnergyDashboard {
               title: (items) => {
                 if (!items.length) return '';
                 const d = new Date(items[0].parsed.x);
-                return d.toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+                return d.toLocaleString(this.locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
               },
               label: (item) => {
-                if (item.dataset.yAxisID === 'y1') return ' Preis: ' + item.parsed.y.toFixed(2) + ' ct/kWh';
-                return ' Verbrauch: ' + item.parsed.y.toFixed(4) + ' kWh';
+                if (item.dataset.yAxisID === 'y1') return ` ${this.t('Preis:')} ${this.num(item.parsed.y.toFixed(2))} ct/kWh`;
+                return ` ${this.t('Verbrauch:')} ${this.num(item.parsed.y.toFixed(4))} kWh`;
               },
             },
           },
@@ -2459,7 +2458,7 @@ class EnergyDashboard {
         scales: {
           x: {
             type: 'time',
-            time: { unit: 'hour', tooltipFormat: 'dd.MM.yyyy HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM' } },
+            time: { unit: 'hour', tooltipFormat: 'dd.MM.yyyy HH:mm', displayFormats: { hour: 'HH:mm', day: this.axisDay } },
             min: startMs,
             max: endMs,
             grid: { color: 'rgba(42,51,66,0.5)' },
@@ -2489,7 +2488,7 @@ class EnergyDashboard {
     const grid = document.getElementById('inv-hourly-grid');
     const dc = this.energyData.__dynamicCosts;
     if (!grid || !dc || !dc.data.length) {
-      if (grid) grid.innerHTML = '<div style="color:var(--text-secondary);font-size:0.8rem;padding:0.5rem">Keine dynamischen Preisdaten verfügbar</div>';
+      if (grid) grid.innerHTML = '<div style="color:var(--text-secondary);font-size:0.8rem;padding:0.5rem">' + this.t('Keine dynamischen Preisdaten verfügbar') + '</div>';
       return;
     }
 
@@ -2523,7 +2522,7 @@ class EnergyDashboard {
     let html = '';
     for (const [ts, v] of sorted) {
       const d = new Date(ts);
-      const time = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      const time = d.toLocaleTimeString(this.locale, { hour: '2-digit', minute: '2-digit' });
       const avgRate = v.rates.length ? v.rates.reduce((a, b) => a + b, 0) / v.rates.length : null;
       const bg = avgRate !== null
         ? rateColor(avgRate).replace('rgb', 'rgba').replace(')', ',0.15)')
@@ -2556,10 +2555,10 @@ class EnergyDashboard {
     this.setEl('flow-battery-soc', (p.battery_soc || 0).toFixed(0) + '%');
 
     const gridLabel = document.getElementById('flow-grid-label');
-    if (gridLabel) gridLabel.textContent = (p.grid_export || 0) > 10 ? 'EXPORT' : 'IMPORT';
+    if (gridLabel) gridLabel.textContent = (p.grid_export || 0) > 10 ? this.t('EXPORT') : this.t('IMPORT');
 
     const batLabel = document.getElementById('flow-battery-label');
-    if (batLabel) batLabel.textContent = (p.battery_charge || 0) > 10 ? 'LADEN' : 'ENTLADEN';
+    if (batLabel) batLabel.textContent = (p.battery_charge || 0) > 10 ? this.t('LADEN') : this.t('ENTLADEN');
 
     // Wärmepumpe
     this.setEl('flow-wp-value', fmt(p.heatpump || 0));
@@ -2634,7 +2633,7 @@ class EnergyDashboard {
           b.classList.toggle('active', b.dataset.period === period);
         });
         // Reset custom button text
-        allCustomBtns.forEach(b => b.textContent = 'Custom');
+        allCustomBtns.forEach(b => b.textContent = this.t('Custom'));
         this.switchPeriod(period);
       });
     });
@@ -2651,7 +2650,7 @@ class EnergyDashboard {
       popup.classList.remove('open');
       document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
       // Show date range on all custom buttons
-      const fmt = (d) => d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+      const fmt = (d) => d.toLocaleDateString(this.locale, { day: '2-digit', month: '2-digit' });
       const label = `${fmt(start)} – ${fmt(end)}`;
       allCustomBtns.forEach(b => { b.classList.add('active'); b.textContent = label; });
       this.switchPeriod('custom');
@@ -2689,7 +2688,7 @@ class EnergyDashboard {
         e.target.classList.add('active');
         this.currentChartUnit = e.target.dataset.unit;
         if (this.currentChartUnit === 'kw' && !this.chartConsumptionKw) {
-          this.setEl('chart-period', 'Lade Leistungsdaten…');
+          this.setEl('chart-period', this.t('Lade Leistungsdaten…'));
           await this.loadPowerChartData();
         }
         this.renderChart();
@@ -2782,7 +2781,30 @@ class EnergyDashboard {
 
   setEl(id, value) {
     const el = document.getElementById(id);
-    if (el) el.textContent = value;
+    if (el) el.textContent = this.num(value);
+  }
+
+  // ── Sprache (i18n.js, Einstellung „Sprache“) ─────────────────
+  t(text, vars) {
+    return window.I18N ? window.I18N.t(text, vars) : text;
+  }
+
+  // Zahl als Text im Format der Sprache (Dezimalkomma bei Deutsch)
+  num(value) {
+    return window.I18N ? window.I18N.num(value) : String(value);
+  }
+
+  get locale() {
+    return window.I18N ? window.I18N.locale() : 'de-DE';
+  }
+
+  // Achsenbeschriftung der Diagramme (date-fns): Deutsch numerisch, Englisch mit Monatsnamen
+  get axisDay() {
+    return this.locale === 'de-DE' ? 'dd.MM.' : 'dd MMM';
+  }
+
+  get axisMonth() {
+    return this.locale === 'de-DE' ? 'MM.yyyy' : 'MMM yyyy';
   }
 
   formatNumber(v) {
@@ -2912,12 +2934,14 @@ class EnergyDashboard {
         this.config.ui.refreshInterval = s.ui.refreshInterval;
       }
       // Darstellung: Logo-Farbe, Untertitel, erster Reiter, Reihenfolge der Kacheln
-      for (const key of ['logoColor', 'logoSubtitle', 'statOrder']) {
+      for (const key of ['logoColor', 'logoSubtitle', 'statOrder', 'hiddenStats', 'language']) {
         if (typeof s.ui?.[key] === 'string') {
           if (!this.config.ui) this.config.ui = {};
           this.config.ui[key] = s.ui[key];
         }
       }
+      // Sprache der Oberfläche (i18n.js)
+      if (window.I18N) window.I18N.lang = this.config.ui?.language === 'en' ? 'en' : 'de';
 
       // Wärmepumpe an/aus (default: an, außer explizit ausgeschaltet)
       this.config.heatpumpEnabled = s.heatpumpEnabled !== false;
@@ -3014,6 +3038,7 @@ class EnergyDashboard {
     // Darstellung
     setVal('set-logo-color', this.config.ui?.logoColor);
     setVal('set-logo-subtitle', this.config.ui?.logoSubtitle);
+    setVal('set-language', this.config.ui?.language || 'de');
     this.populateStatOrderList();
     setVal('set-rate-entity-dyn', this.config.rateEntity || '');
     setVal('set-feed-in-entity', this.config.feedInEntity || '');
@@ -3068,9 +3093,11 @@ class EnergyDashboard {
   // Kacheln (data-stat). Leere Werte = Standard. Der erste Reiter heißt „Strom“,
   // sobald Gas oder Wasser angezeigt wird, sonst „Dashboard“.
   applyUiSettings() {
+    if (window.I18N) window.I18N.apply();  // Texte aus index.html in der gewählten Sprache
     const ui = this.config.ui || {};
-    const logo = document.querySelector('.energy-logo');
-    if (logo) logo.style.color = ui.logoColor || '';
+    // Akzentfarbe für Logo und aktiven Reiter (wie die Panels Heizung und Beregnung)
+    if (ui.logoColor) document.documentElement.style.setProperty('--nav-accent', ui.logoColor);
+    else document.documentElement.style.removeProperty('--nav-accent');
     const sub = document.getElementById('logo-subtitle');
     if (sub) {
       const text = ui.logoSubtitle === '-' ? '' : (ui.logoSubtitle || 'Dashboard');
@@ -3078,15 +3105,62 @@ class EnergyDashboard {
       sub.style.display = text ? '' : 'none';
     }
     const mainLabel = document.getElementById('nav-main-label');
-    if (mainLabel) mainLabel.textContent = (this.isGasEnabled() || this.isWaterEnabled()) ? 'Strom' : 'Dashboard';
+    if (mainLabel) mainLabel.textContent = (this.isGasEnabled() || this.isWaterEnabled()) ? this.t('Strom') : 'Dashboard';
 
     const grid = document.getElementById('stats-grid');
     if (grid) {
+      const userHidden = (ui.hiddenStats || '').split(',').map(s => s.trim());
+      this.mergeHeatpumpTile((this.config.heatpumpEnabled ?? true) && !userHidden.includes('heatpump'));
       for (const key of this.getStatOrder()) {
         const el = grid.querySelector(`[data-stat="${key}"]`);
         if (el) grid.appendChild(el);
       }
+      const hidden = this.getHiddenStats();
+      for (const el of grid.querySelectorAll('[data-stat]')) {
+        el.classList.toggle('stat-hidden', hidden.includes(el.dataset.stat));
+      }
     }
+  }
+
+  // Mit Wärmepumpe: Verbrauch und Wärmepumpe in einer horizontal geteilten Kachel.
+  // Die Elemente der Wärmepumpen-Kachel (ids bleiben gleich) wandern in die
+  // untere Hälfte der Verbrauchs-Kachel und zurück.
+  mergeHeatpumpTile(merge) {
+    const grid = document.getElementById('stats-grid');
+    const cons = grid?.querySelector('[data-stat="consumption"]');
+    const hp = grid?.querySelector('[data-stat="heatpump"]');
+    if (!cons || !hp) return;
+    let half = cons.querySelector('.stat-half-hp');
+    if (merge && !half) {
+      // Überschrift „Verbrauch“ über die ganze Kachel, darunter zwei Zeilen
+      // „Gesamt“ und „Wärme“ (Strom der Wärmepumpe, im Gesamtverbrauch enthalten)
+      const total = document.createElement('span');
+      total.className = 'stat-rowlabel';
+      total.textContent = this.t('Gesamt');
+      cons.querySelector('.stat-value')?.before(total);
+      half = document.createElement('div');
+      half.className = 'stat-half-hp';
+      [...hp.children].forEach(c => half.appendChild(c));
+      const hpLabel = document.createElement('span');
+      hpLabel.className = 'stat-rowlabel';
+      hpLabel.textContent = this.t('Wärme');
+      half.querySelector('.stat-value')?.before(hpLabel);
+      cons.appendChild(half);
+    } else if (!merge && half) {
+      cons.querySelectorAll('.stat-rowlabel').forEach(el => el.remove());
+      [...half.children].forEach(c => hp.appendChild(c));
+      half.remove();
+    }
+    cons.classList.toggle('stat-card-split', merge);
+    hp.classList.toggle('stat-merged', merge);
+  }
+
+  // Ausgeblendete Kacheln (config.ui.hiddenStats, kommagetrennte Schlüssel);
+  // die Wärmepumpe ist ohne eigenen Schalter Teil der Verbrauchs-Kachel
+  getHiddenStats() {
+    const hidden = (this.config.ui?.hiddenStats || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (document.querySelector('[data-stat="heatpump"].stat-merged')) hidden.push('heatpump');
+    return hidden;
   }
 
   // Reihenfolge der Kacheln als Liste von data-stat-Schlüsseln. config.ui.statOrder
@@ -3109,7 +3183,7 @@ class EnergyDashboard {
     return [...new Set([...wanted, ...this._defaultStatOrder])];
   }
 
-  // Liste mit ▲/▼ in den Einstellungen (Anzeige → Reihenfolge der Kacheln)
+  // Liste in den Einstellungen (Anzeige → Kacheln): Haken = anzeigen, ▲/▼ = Reihenfolge
   populateStatOrderList() {
     const list = document.getElementById('set-stat-order');
     const grid = document.getElementById('stats-grid');
@@ -3118,30 +3192,62 @@ class EnergyDashboard {
       const text = grid.querySelector(`[data-stat="${key}"] .stat-label`)?.textContent.trim() || key;
       return text.charAt(0) + text.slice(1).toLowerCase();  // „ERZEUGUNG“ → „Erzeugung“
     };
+    const hidden = (this.config.ui?.hiddenStats || '').split(',').map(s => s.trim());
     list.innerHTML = '';
-    for (const key of this.getStatOrder()) {
-      if (key === 'heatpump' && !(this.config.heatpumpEnabled ?? true)) continue;  // ausgeblendet
+    const keys = this.getStatOrder().filter(k => k !== 'heatpump');
+    keys.splice(keys.indexOf('consumption') + 1, 0, 'heatpump');  // direkt unter Verbrauch
+    for (const key of keys) {
       const li = document.createElement('li');
       li.dataset.stat = key;
-      li.innerHTML = `<span>${label(key)}</span>` +
-        '<button type="button" data-move="-1" aria-label="nach oben">▲</button>' +
-        '<button type="button" data-move="1" aria-label="nach unten">▼</button>';
+      li.classList.toggle('is-hidden', hidden.includes(key));
+      const checkbox = `<input type="checkbox" ${hidden.includes(key) ? '' : 'checked'} aria-label="${this.t('anzeigen')}">`;
+      if (key === 'heatpump') {
+        // Teil der Verbrauchs-Kachel: nur ein-/ausblenden, keine eigene Position
+        li.classList.add('is-sub');
+        li.innerHTML = checkbox + `<span>${this.t('Wärmepumpe')} <small>(${this.t('untere Hälfte der Verbrauchs-Kachel')})</small></span>`;
+      } else {
+        li.innerHTML = checkbox + `<span>${label(key)}</span>` +
+          `<button type="button" data-move="-1" aria-label="${this.t('nach oben')}">▲</button>` +
+          `<button type="button" data-move="1" aria-label="${this.t('nach unten')}">▼</button>`;
+      }
       list.appendChild(li);
     }
     const refresh = () => {
-      const items = [...list.children];
+      // Die Wärmepumpe bleibt beim Verschieben direkt unter dem Verbrauch
+      const hp = list.querySelector('li[data-stat="heatpump"]');
+      const cons = list.querySelector('li[data-stat="consumption"]');
+      if (hp && cons) cons.after(hp);
+      const items = [...list.querySelectorAll('li:not(.is-sub)')];
       items.forEach((li, i) => {
         li.querySelector('[data-move="-1"]').disabled = i === 0;
         li.querySelector('[data-move="1"]').disabled = i === items.length - 1;
       });
+      for (const li of list.children) li.classList.toggle('is-hidden', !li.querySelector('input').checked);
+      // Wärmepumpe nur zeigen, solange „Wärmepumpe-Tab anzeigen“ eingeschaltet ist
+      const hpToggle = document.getElementById('set-heatpump-enabled');
+      if (hp) hp.style.display = (hpToggle ? hpToggle.checked : (this.config.heatpumpEnabled ?? true)) ? '' : 'none';
     };
+    const hpToggle = document.getElementById('set-heatpump-enabled');
+    if (hpToggle && !hpToggle._statListWired) {
+      hpToggle.addEventListener('change', () => this._refreshStatOrderList?.());
+      hpToggle._statListWired = true;
+    }
+    this._refreshStatOrderList = refresh;
     if (!list._wired) {
       list.addEventListener('click', (e) => {
+        if (e.target.matches('input[type="checkbox"]')) { refresh(); return; }
         const btn = e.target.closest('button[data-move]');
         if (!btn) return;
         const li = btn.closest('li');
-        if (btn.dataset.move === '-1' && li.previousElementSibling) list.insertBefore(li, li.previousElementSibling);
-        if (btn.dataset.move === '1' && li.nextElementSibling) list.insertBefore(li.nextElementSibling, li);
+        // Nachbarn ohne den Unterpunkt Wärmepumpe
+        const sibling = (el, dir) => {
+          let s = dir < 0 ? el.previousElementSibling : el.nextElementSibling;
+          while (s && s.classList.contains('is-sub')) s = dir < 0 ? s.previousElementSibling : s.nextElementSibling;
+          return s;
+        };
+        const prev = sibling(li, -1), next = sibling(li, 1);
+        if (btn.dataset.move === '-1' && prev) list.insertBefore(li, prev);
+        if (btn.dataset.move === '1' && next) next.after(li);
         refresh();
       });
       list._wired = true;
@@ -3153,7 +3259,7 @@ class EnergyDashboard {
     const btn = document.getElementById('settings-save-btn');
     const status = document.getElementById('settings-status');
     btn.disabled = true;
-    status.textContent = 'Speichere...';
+    status.textContent = this.t('Speichere...');
     status.className = 'settings-status';
 
     try {
@@ -3233,19 +3339,23 @@ class EnergyDashboard {
             refreshInterval: (parseFloat(getVal('set-refresh-interval')) || 30) * 1000,
             logoColor: getVal('set-logo-color'),
             logoSubtitle: getVal('set-logo-subtitle'),
+            language: getVal('set-language') || 'de',
             statOrder: [...document.querySelectorAll('#set-stat-order li')].map(li => li.dataset.stat).join(', '),
+            hiddenStats: [...document.querySelectorAll('#set-stat-order li')].filter(li => !li.querySelector('input').checked).map(li => li.dataset.stat).join(', '),
           },
         }),
       });
 
       // Update local config
+      const langBefore = window.I18N?.lang;
       await this.loadSettings();
+      if (window.I18N && window.I18N.lang !== langBefore) { location.reload(); return; }  // neue Sprache: neu aufbauen
       this.applyHeatpumpVisibility();
       this.startAutoRefresh();
-      status.textContent = 'Gespeichert!';
+      status.textContent = this.t('Gespeichert!');
     } catch (e) {
       console.error('Save settings failed:', e);
-      status.textContent = 'Fehler: ' + e.message;
+      status.textContent = this.t('Fehler:') + ' ' + e.message;
       status.className = 'settings-status error';
     } finally {
       btn.disabled = false;
@@ -3348,7 +3458,7 @@ class EnergyDashboard {
 
   getPeriodLabel(period) {
     if (period === 'custom' && this._customRange) {
-      const fmt = (d) => d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const fmt = (d) => d.toLocaleDateString(this.locale, { day: '2-digit', month: '2-digit', year: 'numeric' });
       return `${fmt(this._customRange.start)} – ${fmt(this._customRange.end)}`;
     }
     return {

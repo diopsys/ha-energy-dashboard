@@ -16,6 +16,7 @@ Ein vollständiges Energie-Dashboard für Home Assistant mit Solar, Batterie, Ne
 - **Kostensensoren** – Strom-, Gas- und Wasserkosten sowie Einspeisevergütung als HA-Sensoren für das Energie-Dashboard
 - **PV-Prognose** (optional) – Prognose-Linie im Energieprofil, z.B. aus Helios Forecast
 - **HA-App** – Anmeldung über das HA-Frontend (auch in der iPhone-App) und ☰-Knopf für das HA-Menü
+- **Deutsch und Englisch** – Sprachauswahl in den Einstellungen (Oberfläche und Namen der Kostensensoren)
 
 ---
 
@@ -128,7 +129,8 @@ Im Dashboard unter **Einstellungen**:
 - **Sonstiges**: Referenz-Limit, Außentemperatur (Linie im Gas-Diagramm), Sensor mit PV-Prognose (Attribut
   `forecast` mit 15-min-Werten `datetime`, `watts`, `p10`, `p90`) und unter **Erweitert** „Statistik gültig ab“,
   falls die HA-Statistik anfangs fehlerhafte Zählerstände enthält.
-- **Anzeige**: Logo-Farbe, Untertitel (`-` blendet ihn aus), Reihenfolge der Kacheln (▲/▼)
+- **Anzeige**: Sprache (Deutsch/Englisch), Akzentfarbe (Logo und aktiver Reiter), Untertitel (`-` blendet ihn aus),
+  Kacheln ein-/ausblenden und sortieren (▲/▼). Mit Wärmepumpe zeigt die Verbrauchs-Kachel „Gesamt“ und „Wärme“.
 - **Speichern** klicken
 
 Optionale Felder sind in jeder Rubrik unter **Erweitert** eingeklappt.
@@ -141,6 +143,18 @@ eingetragen ist: `sensor.stromkosten_gesamt` (Netzbezug), `sensor.gaskosten_gesa
 `sensor.gasverbrauch_gesamt` (kWh). Im Energie-Dashboard bei Netz, Gas und Wasser als „Entität mit den Gesamtkosten“
 bzw. bei der Einspeisung als „Entität mit dem aktuellen Preis“ eintragen. Die Kosten zählen ab der Einrichtung;
 gab es vorher einen Sensor mit derselben Entitäts-ID, zählt der neue beim letzten Stand seiner Statistik weiter.
+Die Namen folgen der eingestellten Sprache; die Entitäts-IDs entstehen beim ersten Anlegen aus dem Namen
+(bei Englisch z.B. `sensor.electricity_costs_total`) und bleiben danach gleich.
+
+### Übersetzungen
+
+Texte stehen auf Deutsch in `index.html` und `app.js`. `www/i18n.js` enthält je Text die Übersetzung
+(`'Erzeugung': { en: 'Production' }`); Texte aus `index.html` werden beim Laden ersetzt, Texte aus `app.js`
+laufen über `this.t('…')`. Neue Texte brauchen dort einen Eintrag, sonst erscheinen sie in jeder Sprache unverändert.
+Die Namen folgen der eingestellten Sprache; die Entitäts-IDs entstehen beim ersten Anlegen aus dem Namen
+(bei Englisch z.B. `sensor.electricity_costs_total`) und bleiben danach gleich.
+
+
 
 Kumulative Sensoren dürfen mehrere Entitäten enthalten, die addiert bzw. mit `-` abgezogen werden,
 z.B. `sensor.mppt1,sensor.mppt2` oder `sensor.ac_energie,sensor.bezug,-sensor.einspeisung`. Optional gibt es
