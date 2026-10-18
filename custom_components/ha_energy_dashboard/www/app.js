@@ -69,6 +69,22 @@ class EnergyDashboard {
       return;
     }
 
+    // 1b. Anmeldung des HA-Frontends im
+    // Elternfenster mitbenutzen (Panel-iframe, gleiche Herkunft). Funktioniert
+    // auch in der Companion-App, deren externe Anmeldung kein hassTokens im
+    // localStorage ablegt – dort scheiterte der OAuth-Weg an „invalid redirect uri“.
+    const hass = this._parentHass();
+    if (hass?.auth?.data?.access_token) {
+      this._useParentAuth = true;
+      if (hass.auth.expired) {
+        try { await hass.auth.refreshAccessToken(); } catch (e) { /* ignore */ }
+      }
+      this.token = hass.auth.data.access_token;
+      if (await this._testAuth()) return;
+      this._useParentAuth = false;
+      this.token = null;
+    }
+
     // 2. Try localStorage tokens from HA frontend (desktop browser)
     const sources = ['hassTokens', 'dashboardTokens'];
     for (const key of sources) {
@@ -112,6 +128,14 @@ class EnergyDashboard {
     this._startOAuthFlow();
   }
 
+  // hass-Objekt des HA-Frontends (Elternfenster), sonst null
+  _parentHass() {
+    try {
+      if (window.parent === window) return null;
+      return window.parent.document.querySelector('home-assistant')?.hass || null;
+    } catch (e) { return null; }
+  }
+
   async _testAuth() {
     if (!this.token) return false;
     try {
@@ -150,6 +174,15 @@ class EnergyDashboard {
   }
 
   async refreshAccessToken() {
+    // bei Frontend-Anmeldung erneuert HA (bzw. die App) das Token
+    if (this._useParentAuth) {
+      try {
+        const hass = this._parentHass();
+        await hass.auth.refreshAccessToken();
+        this.token = hass.auth.data.access_token;
+        return true;
+      } catch (e) { return false; }
+    }
     if (!this._refreshToken) return false;
     try {
       const body = new URLSearchParams({
@@ -175,6 +208,11 @@ class EnergyDashboard {
   // ── REST API ──────────────────────────────────────────────────
 
   async fetchAPI(path, options = {}) {
+    // immer das aktuelle Token des Frontends verwenden
+    if (this._useParentAuth) {
+      const t = this._parentHass()?.auth?.data?.access_token;
+      if (t) this.token = t;
+    }
     const headers = {};
     if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
     headers['Content-Type'] = 'application/json';
@@ -197,7 +235,27 @@ class EnergyDashboard {
     return res.json();
   }
 
+  // Ein Eintrag darf mehrere Entitäten enthalten
+  // ("sensor.a,sensor.b,-sensor.c"), die addiert bzw. mit "-" abgezogen werden –
+  // z. B. Erzeugung = MPPT1 + MPPT2, Verbrauch = Erzeugung + Bezug + Entladung
+  // − Einspeisung − Ladung.
+  _splitIds(entityId) {
+    return String(entityId || '').split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  _signedIds(entityId) {
+    return this._splitIds(entityId).map(s => s.startsWith('-')
+      ? { id: s.slice(1).trim(), sign: -1 } : { id: s, sign: 1 });
+  }
+
   async getState(entityId) {
+    const parts = this._signedIds(entityId);
+    if (parts.length > 1 || parts[0]?.sign === -1) {
+      const values = await Promise.all(parts.map(p => this.getState(p.id)));
+      // getState liefert 0 bei unavailable – dann keine Teilsumme
+      return values.every(v => v > 0)
+        ? values.reduce((acc, v, i) => acc + parts[i].sign * v, 0) : 0;
+    }
     try {
       const data = await this.fetchAPI(`/api/states/${entityId}`);
       return parseFloat(data.state) || 0;
@@ -211,6 +269,8 @@ class EnergyDashboard {
   // treats them as kWh. If a sensor actually reports Wh/MWh (common on
   // instances we didn't set up ourselves), normalize so totals stay sane.
   async getUnitScale(entityId) {
+    if (!entityId) return 1;
+    entityId = this._signedIds(entityId)[0]?.id;  // mehrere Entitäten: gleiche Einheit angenommen
     if (!entityId) return 1;
     if (!this._unitScaleCache) this._unitScaleCache = {};
     if (this._unitScaleCache[entityId] !== undefined) return this._unitScaleCache[entityId];
@@ -306,6 +366,29 @@ class EnergyDashboard {
   // ── Statistics API ────────────────────────────────────────────
 
   async getStatistics(entityId, startTime, endTime, period = 'hour') {
+    const parts = this._signedIds(entityId);
+    if (parts.length > 1 || parts[0]?.sign === -1) {
+      // Zeilen mit gleichem Start vorzeichenrichtig addieren; nur Zeitpunkte,
+      // die alle Entitäten haben
+      const lists = await Promise.all(parts.map(p => this.getStatistics(p.id, startTime, endTime, period)));
+      const add = (a, b, sign) => (a == null || b == null) ? null : a + sign * b;
+      const keys = ['change', 'sum', 'mean', 'state'];
+      const merged = new Map(lists[0].map(s => {
+        const m = { start: s.start, end: s.end, _n: 1 };
+        for (const k of keys) m[k] = s[k] == null ? null : parts[0].sign * s[k];
+        return [s.start, m];
+      }));
+      lists.slice(1).forEach((list, i) => {
+        const sign = parts[i + 1].sign;
+        for (const s of list) {
+          const m = merged.get(s.start);
+          if (!m) continue;
+          for (const k of keys) m[k] = add(m[k], s[k], sign);
+          m._n++;
+        }
+      });
+      return [...merged.values()].filter(s => s._n === parts.length);
+    }
     try {
       const result = await this.wsCommand({
         type: 'recorder/statistics_during_period',
@@ -392,6 +475,16 @@ class EnergyDashboard {
       for (const [id, value] of Object.entries(states)) {
         if (mapping[id]) this.energyData[mapping[id]] = value;
       }
+
+      // ohne Aggregat-Sensor aus dem Gesamtzähler
+      // rechnen (aktueller Stand minus Stand zu Periodenbeginn)
+      const cum = this.config.entities?.cumulative || {};
+      const { start } = this.getTimeBounds(period);
+      await Promise.all(Object.entries(cum).map(async ([key, entityId]) => {
+        if (!entityId || energy[key]?.[suffix] || key === 'consumption_detail') return;
+        const delta = await this.counterDelta(entityId, start);
+        if (delta != null) this.energyData[key] = delta;
+      }));
     } else {
       // Past periods or yesterday — use statistics API
       await this.loadPeriodFromHistory(period);
@@ -425,8 +518,73 @@ class EnergyDashboard {
     this.updateStatCards();
     this.updateFlowStats();
     this.updateKeyMetrics();
+    // Gas/Wasser des vorigen Zeitraums verwerfen, bis neu geladen
+    this._gasInv = undefined;
+    this._waterInv = undefined;
     this.updateInvoiceTab();
     this.updateHeatpumpTab();
+    this.updateGasTab();
+    this.updateWaterTab();
+  }
+
+  // Energie aus Gesamtzählern als Differenz der
+  // Zählerstände (Langzeitstatistik "state"), nicht als Summe der "change"-Werte –
+  // die Statistik hat Sprünge (z. B. 14.09.2026: ganzer Zählerstand als change).
+
+  // Zählerstand zum Zeitpunkt t = letzter Stand der Stunde vor t.
+  // Fehlt sie (Statistik-Lücke oder Beginn nach t), erster Stand bis `limit`.
+  async counterStateAt(entityId, t, limit) {
+    const rows = await this.getStatistics(entityId, new Date(t.getTime() - 3600000), t, 'hour');
+    const hit = rows.filter(s => s.state != null).pop();
+    if (hit) return hit.state;
+    if (!limit || limit <= t) return null;
+    const days = await this.getStatistics(entityId, t, limit, 'day');
+    const day = days.find(s => s.state != null);
+    if (!day) return null;
+    const dayStart = new Date(day.start);
+    const hours = await this.getStatistics(entityId, dayStart, new Date(dayStart.getTime() + 86400000), 'hour');
+    const first = hours.find(s => s.state != null);
+    return first ? first.state : day.state;
+  }
+
+  // Einstellung „Statistik gültig ab“: Zählerstände davor werden ignoriert
+  // (z. B. wenn die HA-Statistik anfangs stillstand und dann nachsprang).
+  get _counterValidFrom() {
+    const d = this.config.statsValidFrom ? new Date(this.config.statsValidFrom) : null;
+    return d && !isNaN(d) ? d : new Date(0);
+  }
+
+  // Laufender Zeitraum: aktueller Zählerstand minus Stand bei `start`
+  async counterDelta(entityId, start) {
+    if (start < this._counterValidFrom) start = this._counterValidFrom;
+    const now = new Date();
+    const [base, live, scale] = await Promise.all([
+      this.counterStateAt(entityId, start, now),
+      this.getState(entityId),
+      this.getUnitScale(entityId),
+    ]);
+    if (!(live > 0) || base == null) return null;  // getState liefert 0 bei unavailable
+    return Math.max(0, live - base) * scale;
+  }
+
+  // Abgeschlossener Zeitraum: Stand bei `end` minus Stand bei `start`
+  async counterRange(entityId, start, end) {
+    if (start < this._counterValidFrom) start = this._counterValidFrom;
+    if (end <= start) return null;
+    const [base, scale] = await Promise.all([
+      this.counterStateAt(entityId, start, end),
+      this.getUnitScale(entityId),
+    ]);
+    if (base == null) return null;
+    let last = await this.counterStateAt(entityId, end);
+    if (last == null) {
+      // Lücke am Ende: letzter vorhandener Tagesstand im Zeitraum
+      const days = await this.getStatistics(entityId, start, end, 'day');
+      const row = days.filter(s => s.state != null).pop();
+      last = row ? row.state : null;
+    }
+    if (last == null) return null;
+    return Math.max(0, last - base) * scale;
   }
 
   async loadPeriodFromHistory(period) {
@@ -441,24 +599,22 @@ class EnergyDashboard {
     const statPeriod = spanDays > 180 ? 'month'
                      : spanDays > 7 ? 'day' : 'hour';
     if (cum) {
+      // Differenz der Zählerstände statt Summe der
+      // change-Werte (statPeriod wird dafür nicht mehr gebraucht)
       const promises = Object.entries(cum).map(async ([key, entityId]) => {
-        if (!entityId) return;
-        const [stats, scale] = await Promise.all([
-          this.getStatistics(entityId, start, end, statPeriod),
-          this.getUnitScale(entityId),
-        ]);
-        if (stats.length > 0) {
-          const total = stats.reduce((acc, s) => acc + Math.max(0, s.change ?? 0), 0) * scale;
-          if (total > 0) {
-            this.energyData[key] = total;
-          }
+        if (!entityId || key === 'consumption_detail') return;  // nur fürs Diagramm
+        const total = await this.counterRange(entityId, start, end);
+        if (total > 0) {
+          this.energyData[key] = total;
         }
       });
       await Promise.all(promises);
     }
 
     // Also try to get battery data from daily sensors history
-    if (energy?.battery_charge?.daily) {
+    // (nur ohne Gesamtzähler – das Maximum des
+    // Tageszählers ergibt bei Woche/Monat nur den stärksten Tag)
+    if (!cum?.battery_charge && energy?.battery_charge?.daily) {
       const [stats, scale] = await Promise.all([
         this.getStatistics(energy.battery_charge.daily, start, end, 'hour'),
         this.getUnitScale(energy.battery_charge.daily),
@@ -468,7 +624,7 @@ class EnergyDashboard {
         if (maxVal > 0) this.energyData.battery_charge = maxVal;
       }
     }
-    if (energy?.battery_discharge?.daily) {
+    if (!cum?.battery_discharge && energy?.battery_discharge?.daily) {
       const [stats, scale] = await Promise.all([
         this.getStatistics(energy.battery_discharge.daily, start, end, 'hour'),
         this.getUnitScale(energy.battery_discharge.daily),
@@ -543,7 +699,12 @@ class EnergyDashboard {
     const exported = d.grid_export || 0;
     const imported = d.grid_import || 0;
 
-    d.self_consumed = Math.max(0, production - exported);
+    // Eigenverbrauch = Verbrauch − Netzbezug
+    // (PV direkt + Batterie). Original „Erzeugung − Einspeisung“ zählte die
+    // Batterieladung und Wechselrichterverluste mit (größer als der Verbrauch).
+    d.self_consumed = consumption > 0
+      ? Math.max(0, consumption - imported)
+      : Math.max(0, production - exported);
     d.self_sufficiency = consumption > 0
       ? Math.min(100, Math.max(0, ((consumption - imported) / consumption) * 100))
       : 0;
@@ -551,7 +712,20 @@ class EnergyDashboard {
     if (!d.__cost && d.__rate) {
       d.__cost = imported * d.__rate;
     }
-    d.savings = d.self_consumed * (d.__rate || 0);
+    d.savings = d.self_consumed * this.getRate(d);  // vorher nur Sensor (__rate)
+  }
+
+  // Preisquelle. Ein in den Einstellungen
+  // eingetragener Sensor (Kosten-Sensoren → rate / compensation) hat Vorrang,
+  // sofern er einen Wert liefert; sonst gelten die Tarife (input_number in HA).
+  getRate(d = this.energyData) {
+    if (this.config.entities?.cost?.rate && d?.__rate > 0) return d.__rate;
+    return this.config.electricityRate || 0;
+  }
+
+  getCompensation(d = this.energyData) {
+    if (this.config.entities?.cost?.compensation && d?.__compensation > 0) return d.__compensation;
+    return this.config.feedInRate || 0;
   }
 
   // ── Chart (Chart.js + chartjs-plugin-zoom) ──────────────────
@@ -592,17 +766,31 @@ class EnergyDashboard {
     if (!cum) return;
 
     const hpEnabled = this.config.heatpumpEnabled ?? true;
-    const [consumptionStats, productionStats, wpStats, consScale, prodScale] = await Promise.all([
-      cum.consumption ? this.getStatistics(cum.consumption, start, end, chartPeriod) : [],
-      cum.production ? this.getStatistics(cum.production, start, end, chartPeriod) : [],
+    // einen Zeitschritt früher laden – dessen
+    // Zählerstand ist der Ausgangswert für die Differenz (statsToDeltaData)
+    const fetchStart = new Date(start);
+    if (chartPeriod === 'hour') fetchStart.setHours(fetchStart.getHours() - 1);
+    else if (chartPeriod === 'day') fetchStart.setDate(fetchStart.getDate() - 1);
+    else fetchStart.setMonth(fetchStart.getMonth() - 1);
+    const [consData, productionStats, wpStats, prodScale] = await Promise.all([
+      this.consumptionStats(fetchStart, end, chartPeriod),
+      cum.production ? this.getStatistics(cum.production, fetchStart, end, chartPeriod) : [],
       hpEnabled ? this.getStatistics(this._wpEntities.electricTotal, start, end, chartPeriod) : [],
-      this.getUnitScale(cum.consumption),
       this.getUnitScale(cum.production),
     ]);
 
-    this.chartConsumption = this.statsToChartData(consumptionStats, consScale);
-    this.chartProduction = this.statsToChartData(productionStats, prodScale);
+    this.chartConsumption = this.statsToDeltaData(consData.rows, consData.scale, start);
+    this.chartProduction = this.statsToDeltaData(productionStats, prodScale, start);
     this.chartHeatpump = this.statsToChartData(wpStats);
+
+    // PV-Prognose für „Heute“ (Einstellung „PV-Prognose“)
+    try {
+      this.chartForecast = await this.loadForecast(period);
+    } catch (e) {
+      console.warn('Forecast load failed:', e.message);
+      this.chartForecast = null;
+    }
+
 
     // Clear cached kW data (lazy-loaded on toggle)
     this.chartConsumptionKw = null;
@@ -616,6 +804,153 @@ class EnergyDashboard {
     if (resetBtn) resetBtn.style.display = 'none';
 
     this.renderChart();
+  }
+
+  // ── Zoom-abhängige Auflösung ────
+  // kWh-Ansicht, alle Zeiträume: Beim Hineinzoomen werden die Balken feiner –
+  // Monat → Tag → Stunde → 30/15/10/5 min, je nach sichtbarem Zeitraum.
+  // Unter einem Tag als kWh je Stunde (= mittlere kW), damit die Höhe beim
+  // Zoomen vergleichbar bleibt und zur Prognose (15-min-kW) passt; Tagesbalken
+  // in kWh je Tag. Energie als Differenz der Zählerstände (siehe statsToDeltaData).
+  // Unter 1 h aus der 5-min-Statistik (HA hält sie 10 Tage), sonst aus der
+  // Stunden- bzw. Tagesstatistik.
+  _fineSteps = [
+    [1.5 * 3600000, 5], [3 * 3600000, 10], [6 * 3600000, 15], [12 * 3600000, 30],
+    [3 * 86400000, 60], [62 * 86400000, 1440],
+  ];
+
+  _baseMinutes() {
+    return { hour: 60, day: 1440 }[this.getChartAggregation(this.currentPeriod)] ?? 43200;
+  }
+
+  // Beginn des Balkens, in dem t liegt (Tage und Stunden in Ortszeit)
+  _bucketStart(t, minutes) {
+    const d = new Date(t);
+    if (minutes >= 1440) d.setHours(0, 0, 0, 0);
+    else if (minutes >= 60) d.setMinutes(0, 0, 0);
+    else d.setTime(Math.floor(t / (minutes * 60000)) * minutes * 60000);
+    return d;
+  }
+
+  async loadFineStats(from, to, minutes) {
+    const statPeriod = minutes < 60 ? '5minute' : minutes < 1440 ? 'hour' : 'day';
+    if (statPeriod === '5minute' && Date.now() - from.getTime() > 10 * 86400000) return null;
+    const fetchStart = new Date(from);  // ein Schritt früher: Ausgangswert für die Differenz
+    if (statPeriod === 'day') fetchStart.setDate(fetchStart.getDate() - 1);
+    else fetchStart.setTime(fetchStart.getTime() - (statPeriod === 'hour' ? 3600000 : 300000));
+    const cum = this.config.entities?.cumulative || {};
+    const [consData, prod, prodScale] = await Promise.all([
+      this.consumptionStats(fetchStart, to, statPeriod),
+      cum.production ? this.getStatistics(cum.production, fetchStart, to, statPeriod) : [],
+      this.getUnitScale(cum.production),
+    ]);
+    const cons = consData.rows, consScale = consData.scale;
+    if (!cons.length && !prod.length) return null;
+    return { from, to, cons, prod, consScale, prodScale };
+  }
+
+  // Verbrauch für Balken von 1 h und kürzer aus
+  // einem direkt messenden Zähler (Einstellung „Verbrauch fein“, z. B.
+  // sensor.pv_load_summary). Die Formel AC-Energie + Bezug − Einspeisung stimmt
+  // über Tage auf < 1 %, verschiebt aber Energie zwischen Stunden, weil
+  // Wechselrichter- und Smart-Meter-Zähler zeitversetzt zählen (07.10.2026
+  // 10–11 Uhr: −7 Wh statt ~0,6 kWh). Fehlen dem feinen Zähler Werte (Lücken),
+  // gilt die Formel.
+  async consumptionStats(start, end, statPeriod) {
+    const cum = this.config.entities?.cumulative || {};
+    const detail = cum.consumption_detail;
+    if (detail && (statPeriod === 'hour' || statPeriod === '5minute')) {
+      const [rows, scale] = await Promise.all([
+        this.getStatistics(detail, start, end, statPeriod),
+        this.getUnitScale(detail),
+      ]);
+      const stepMs = statPeriod === 'hour' ? 3600000 : 300000;
+      const expected = Math.max(1, Math.floor((Math.min(end.getTime(), Date.now()) - start.getTime()) / stepMs));
+      if (rows.filter(s => s.state != null).length >= expected * 0.9) return { rows, scale };
+    }
+    if (!cum.consumption) return { rows: [], scale: 1 };
+    const [rows, scale] = await Promise.all([
+      this.getStatistics(cum.consumption, start, end, statPeriod),
+      this.getUnitScale(cum.consumption),
+    ]);
+    return { rows, scale };
+  }
+
+  fineSeries(stats, scale, minutes, from) {
+    const ms = minutes * 60000;
+    const buckets = new Map();
+    let prev = null;
+    for (const s of stats) {
+      const t = new Date(s.start).getTime();
+      // Differenz der Zählerstände, ungekappt: erst je Balken kappen –
+      // zusammengesetzte Zähler (a + b − c) zählen zeitversetzt
+      const delta = (s.state != null && prev != null) ? s.state - prev : null;
+      if (s.state != null) prev = s.state;
+      if (t < from.getTime() || delta == null) continue;
+      const k = minutes >= 60 ? t : Math.floor(t / ms) * ms;  // Stunden-/Tageszeilen sind schon ein Balken
+      buckets.set(k, (buckets.get(k) || 0) + delta * scale);
+    }
+    const factor = minutes < 1440 ? 60 / minutes : 1;  // kWh/h bzw. kWh/Tag
+    return [...buckets.entries()].sort((a, b) => a[0] - b[0])
+      .map(([x, kwh]) => ({ x: minutes >= 60 ? x : x + ms / 2, y: Math.max(0, kwh) * factor }));
+  }
+
+  async refineChartForZoom(chart) {
+    if (!chart || chart !== this.chart || this.currentChartUnit !== 'kwh') return;
+    const token = (this._fineToken = (this._fineToken || 0) + 1);
+    const xMin = chart.scales.x.min, xMax = chart.scales.x.max, span = xMax - xMin;
+    const base = this._baseMinutes();
+    const step = this._fineSteps.find(([maxSpan]) => span <= maxSpan);
+    let minutes = step && step[1] < base ? step[1] : null;
+    if (minutes && chart._fine?.minutes === minutes
+        && chart._fine.from.getTime() <= xMin && chart._fine.to.getTime() >= xMax) return;
+    if (!minutes && !chart._fine) return;
+
+    let fine = null;
+    if (minutes) {
+      // Sichtbaren Bereich plus eine Breite zu jeder Seite (glattes Verschieben),
+      // begrenzt auf den Zeitraum
+      const { start, end } = this.getTimeBounds(this.currentPeriod);
+      const lo = Math.max(start.getTime(), xMin - span), hi = Math.min(end.getTime(), xMax + span);
+      try {
+        fine = await this.loadFineStats(this._bucketStart(lo, minutes), new Date(hi), minutes);
+        if (!fine && minutes < 60 && base > 60) {  // ältere Tage: keine 5-min-Statistik mehr
+          minutes = 60;
+          fine = await this.loadFineStats(this._bucketStart(lo, 60), new Date(hi), 60);
+        }
+      } catch (e) { fine = null; }
+      if (token !== this._fineToken || chart !== this.chart) return;  // inzwischen weitergezoomt
+    }
+    const useFine = !!(minutes && fine);
+    // Diagramm neu aufbauen statt Datensätze auszutauschen: Chart.js zeichnete
+    // beim Austausch Reste der Tagesbalken mit alter Breite weiter
+    this._chartFine = useFine ? {
+      minutes, from: fine.from, to: fine.to,
+      unitShort: minutes >= 1440 ? 'kWh/Tag' : 'kWh/h',
+      unit: minutes >= 1440 ? 'kWh/Tag' : `kWh/h, ${minutes >= 60 ? '1 h' : minutes + ' min'}`,
+      cons: this.fineSeries(fine.cons, fine.consScale, minutes, fine.from),
+      prod: this.fineSeries(fine.prod, fine.prodScale, minutes, fine.from),
+    } : null;
+    this.renderChart({ min: xMin, max: xMax });
+    const resetBtn = document.getElementById('reset-zoom-btn');
+    if (resetBtn) resetBtn.style.display = '';
+  }
+
+  // Energie je Zeitschritt als Differenz der
+  // Zählerstände. "change" hat Sprünge, wenn HA die Summen neu aufsetzt
+  // (z. B. Statistik-Import 07.10.2026 10:00: +46.864 kWh in 5 min).
+  // Zeilen vor `from` dienen nur als Ausgangswert.
+  statsToDeltaData(stats, scale = 1, from = null) {
+    const fromMs = from ? from.getTime() : -Infinity;
+    const out = [];
+    let prev = null;
+    for (const s of stats) {
+      const x = new Date(s.start).getTime();
+      const delta = (s.state != null && prev != null) ? s.state - prev : (s.change ?? 0);
+      if (s.state != null) prev = s.state;
+      if (x >= fromMs) out.push({ x, y: Math.max(0, delta) * scale });
+    }
+    return out;
   }
 
   statsToChartData(stats, scale = 1) {
@@ -773,6 +1108,7 @@ class EnergyDashboard {
     // Long periods: use Statistics API (mean values, available long-term)
     const useHistory = ['today', 'yesterday', 'this_week', 'last_week'].includes(this.currentPeriod);
 
+    this._kwDailyPeak = false;
     if (useHistory) {
       const [consHistory, prodHistory] = await Promise.all([
         this.getHistory(pwr.consumption, start, end),
@@ -784,19 +1120,38 @@ class EnergyDashboard {
       // Power sensors are template sensors without state_class, so no mean statistics.
       // Workaround: use cumulative kWh sensors and derive average kW from change values.
       // change_kWh per hour = average kW, change_kWh per day = average kW / 24
+      // Stundenenergie (kWh je h = mittlere kW) als
+      // Differenz der Zählerstände mit Wh→kWh – vorher "change" ohne Umrechnung
+      // (Fronius-Zähler in Wh → 1000-fach) und mit den Sprüngen der Statistik.
+      // Verbrauch über consumptionStats (direkt messender Zähler, sonst Formel).
+      // Über 14 Tage je Tag die höchste Stundenleistung (Tagesspitze) statt des
+      // Tagesmittels – passt zur Referenzlinie.
       const cum = this.config.entities?.cumulative;
       if (!cum?.consumption || !cum?.production) return;
       const days = (end - start) / 86400000;
-      const useDailyStats = days > 14;
-      const statPeriod = useDailyStats ? 'day' : 'hour';
-      const hoursPerBucket = useDailyStats ? 24 : 1;
-      const [consStats, prodStats] = await Promise.all([
-        this.getStatistics(cum.consumption, start, end, statPeriod),
-        this.getStatistics(cum.production, start, end, statPeriod),
+      const fetchStart = new Date(start.getTime() - 3600000);  // Ausgangswert für die Differenz
+      const [consData, prodStats, prodScale] = await Promise.all([
+        this.consumptionStats(fetchStart, end, 'hour'),
+        this.getStatistics(cum.production, fetchStart, end, 'hour'),
+        this.getUnitScale(cum.production),
       ]);
-      this.chartConsumptionKw = this.statsToKwChartData(consStats, hoursPerBucket);
-      this.chartProductionKw = this.statsToKwChartData(prodStats, hoursPerBucket);
+      const consHourly = this.statsToDeltaData(consData.rows, consData.scale, start);
+      const prodHourly = this.statsToDeltaData(prodStats, prodScale, start);
+      this._kwDailyPeak = days > 14;
+      this.chartConsumptionKw = this._kwDailyPeak ? this.dailyPeak(consHourly) : consHourly.filter(d => d.y > 0);
+      this.chartProductionKw = this._kwDailyPeak ? this.dailyPeak(prodHourly) : prodHourly.filter(d => d.y > 0);
     }
+  }
+
+  // Höchster Wert je Kalendertag (Ortszeit), x = Tagesbeginn
+  dailyPeak(points) {
+    const days = new Map();
+    for (const p of points) {
+      const d = new Date(p.x);
+      const key = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      if (!days.has(key) || p.y > days.get(key)) days.set(key, p.y);
+    }
+    return [...days.entries()].sort((a, b) => a[0] - b[0]).map(([x, y]) => ({ x, y }));
   }
 
   statsToKwChartData(stats, hoursPerBucket) {
@@ -905,20 +1260,93 @@ class EnergyDashboard {
     return 'day';
   }
 
-  renderChart() {
+  // ── PV-Prognose ──────────────────────────────────────────────
+  // Einstellung „PV-Prognose“: Sensor mit Attribut „forecast“ (15-min-Werte mit
+  // datetime, watts, p10, p90 ab heute 00:00), z. B. Helios Forecast.
+  // Nur für den Zeitraum „Heute“.
+  get _forecastEntity() {
+    return this.config.entities?.forecast || '';
+  }
+
+  async loadForecast(period) {
+    if (period !== 'today' || !this._forecastEntity) return null;
+    const data = await this.fetchAPI(`/api/states/${this._forecastEntity}`);
+    const list = data?.attributes?.forecast;
+    if (!Array.isArray(list)) return null;
+
+    const now = new Date();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const dayEnd = dayStart + 86400000;
+    const today = list
+      .map(f => ({ t: new Date(f.datetime).getTime(), w: f.watts, p10: f.p10, p90: f.p90 }))
+      .filter(f => f.t >= dayStart && f.t < dayEnd && f.w != null);
+    if (!today.length) return null;
+
+    // kW: 15-min-Leistung; kWh: Summe je Stunde (15 min = 0,25 h)
+    const kw = today.map(f => ({ x: f.t, y: f.w / 1000 }));
+    const hours = new Map();
+    const hasBand = today.some(f => f.p10 != null && f.p90 != null);
+    for (const f of today) {
+      const h = new Date(f.t); h.setMinutes(0, 0, 0);
+      const k = h.getTime();
+      const e = hours.get(k) || { y: 0, p10: 0, p90: 0 };
+      e.y += f.w * 0.25 / 1000;
+      if (hasBand) { e.p10 += (f.p10 ?? f.w) * 0.25 / 1000; e.p90 += (f.p90 ?? f.w) * 0.25 / 1000; }
+      hours.set(k, e);
+    }
+    const sorted = [...hours.entries()].sort((a, b) => a[0] - b[0]);
+    return {
+      kw,
+      kwh: sorted.map(([x, e]) => ({ x, y: e.y })),
+      kwBand: hasBand ? today.map(f => ({ x: f.t, lo: (f.p10 ?? f.w) / 1000, hi: (f.p90 ?? f.w) / 1000 })) : null,
+      kwhBand: hasBand ? sorted.map(([x, e]) => ({ x, lo: e.p10, hi: e.p90 })) : null,
+      dayEnd,
+      totalKwh: sorted.reduce((s, [, e]) => s + e.y, 0),
+    };
+  }
+
+  // `view` = sichtbarer Ausschnitt {min, max} nach
+  // einem Zoom; dann gelten die feinen Balken aus this._chartFine. Ohne `view`
+  // (neuer Zeitraum, Reset) wieder die Grundauflösung.
+  renderChart(view = null) {
     const periodLabel = this.getPeriodLabel(this.currentPeriod);
     this.setEl('chart-period', periodLabel);
 
     const isKw = this.currentChartUnit === 'kw';
     const unitLabel = isKw ? 'kW' : 'kWh';
-    const consumption = isKw ? (this.chartConsumptionKw || []) : this.chartConsumption;
-    const production = isKw ? (this.chartProductionKw || []) : this.chartProduction;
-    const heatpump = isKw ? [] : (this.chartHeatpump || []);
+    if (!view) this._chartFine = null;
+    const fine = isKw ? null : this._chartFine;
+    const consumption = isKw ? (this.chartConsumptionKw || []) : (fine ? fine.cons : this.chartConsumption);
+    const production = isKw ? (this.chartProductionKw || []) : (fine ? fine.prod : this.chartProduction);
+    const barUnit = fine ? fine.unit : (isKw && this._kwDailyPeak ? 'kW, Tagesspitze' : unitLabel);
+    const heatpump = isKw || fine ? [] : (this.chartHeatpump || []);
     const chartPeriod = this.getChartAggregation(this.currentPeriod);
     const timeUnitMap = { hour: 'hour', day: 'day', month: 'month' };
-    const timeUnit = timeUnitMap[chartPeriod] || 'day';
+    const timeUnit = fine ? (fine.minutes < 60 ? 'minute' : fine.minutes < 1440 ? 'hour' : 'day')
+                          : (timeUnitMap[chartPeriod] || 'day');
     const refKw = this.config.refLimit ?? 5;
-    const { start: periodStart, end: periodEnd } = this.getTimeBounds(this.currentPeriod);
+    const { start: periodStart, end: periodEnd0 } = this.getTimeBounds(this.currentPeriod);
+
+    // PV-Prognose: Linie, optional p10–p90-Band; Achse bis Mitternacht.
+    // Bei Balken unter 1 h im 15-min-Raster als kW (= kWh/h).
+    const fc = this.currentPeriod === 'today' ? this.chartForecast : null;
+    const fcKw = isKw || !!(fine && fine.minutes < 60);
+    const fcData = fc ? (fcKw ? fc.kw : fc.kwh) : [];
+    const fcBand = fc ? (fcKw ? fc.kwBand : fc.kwhBand) : null;
+    const periodEnd = fc ? new Date(fc.dayEnd) : periodEnd0;
+    const forecastDatasets = fcData.length ? [
+      ...(fcBand ? [
+        { type: 'line', label: 'Prognose p10', data: fcBand.map(b => ({ x: b.x, y: b.lo })),
+          borderWidth: 0, pointRadius: 0, fill: false, stack: 'fc-lo', order: 0 },
+        { type: 'line', label: 'Prognose p10–p90', data: fcBand.map(b => ({ x: b.x, y: b.hi })),
+          borderWidth: 0, pointRadius: 0, fill: '-1', backgroundColor: 'rgba(227, 179, 65, 0.15)',
+          stack: 'fc-hi', order: 0 },
+      ] : []),
+      { type: 'line', label: `PV-Prognose (${fcKw && !isKw ? 'kWh/h' : unitLabel})`, data: fcData,
+        _unit: fcKw && !isKw ? 'kWh/h' : undefined,
+        borderColor: '#e3b341', backgroundColor: '#e3b341', borderWidth: 2, borderDash: [6, 4],
+        pointRadius: 0, tension: 0.3, fill: false, stack: 'forecast', order: 0 },
+    ] : [];
 
     // Highlight bars exceeding reference in kW mode
     const consBg = isKw
@@ -933,19 +1361,21 @@ class EnergyDashboard {
       data: {
         datasets: [
           {
-            label: `Verbrauch (${unitLabel})`,
+            label: `Verbrauch (${barUnit})`,
             data: consumption,
+            _unit: fine ? fine.unitShort : undefined,
             backgroundColor: consBg,
             borderColor: consBorder,
             borderWidth: 1,
-            borderRadius: isKw ? 2 : 4,
+            borderRadius: isKw || (fine && fine.minutes < 60) ? 2 : 4,
             barPercentage: isKw ? 0.9 : 0.7,
             categoryPercentage: isKw ? 0.9 : 0.8,
             stack: 'main',
           },
           {
-            label: `Erzeugung (${unitLabel})`,
+            label: `Erzeugung (${barUnit})`,
             data: production,
+            _unit: fine ? fine.unitShort : undefined,
             backgroundColor: isKw ? 'rgba(63, 185, 80, 0.7)' : 'rgba(63, 185, 80, 0.55)',
             borderColor: '#3fb950',
             borderWidth: 1,
@@ -965,6 +1395,7 @@ class EnergyDashboard {
             categoryPercentage: 0.8,
             stack: 'heatpump',
           }] : []),
+          ...forecastDatasets,
         ],
       },
       options: {
@@ -981,7 +1412,8 @@ class EnergyDashboard {
               padding: 16,
               font: { size: 12 },
               generateLabels: (chart) => {
-                const labels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                const labels = Chart.defaults.plugins.legend.labels.generateLabels(chart)
+                  .filter(l => l.text !== 'Prognose p10');  // Hilfslinie des Prognose-Bands
                 if (isKw) {
                   labels.push({
                     text: `Referenz-Limit (${refKw} kW)`,
@@ -1005,10 +1437,11 @@ class EnergyDashboard {
             borderWidth: 1,
             padding: 12,
             cornerRadius: 8,
+            filter: (item) => item.dataset.label !== 'Prognose p10',
             callbacks: {
               label: (ctx) => {
                 const v = (ctx.parsed.y ?? 0).toFixed(2);
-                return `${ctx.dataset.label}: ${v} ${unitLabel}`;
+                return `${ctx.dataset.label}: ${v} ${ctx.dataset._unit || unitLabel}`;
               },
             },
           },
@@ -1019,7 +1452,8 @@ class EnergyDashboard {
             limits: {
               x: { min: periodStart.getTime(), max: periodEnd.getTime(), minRange: 60 * 60 * 1000 },
             },
-            pan: { enabled: true, mode: 'x' },
+            pan: { enabled: true, mode: 'x',
+              onPanComplete: ({ chart }) => this.refineChartForZoom(chart) },
             zoom: {
               wheel: { enabled: true, speed: 0.08 },
               pinch: { enabled: true },
@@ -1028,6 +1462,7 @@ class EnergyDashboard {
               onZoomComplete: ({ chart }) => {
                 const resetBtn = document.getElementById('reset-zoom-btn');
                 if (resetBtn) resetBtn.style.display = '';
+                this.refineChartForZoom(chart);
               },
             },
           },
@@ -1037,10 +1472,14 @@ class EnergyDashboard {
             type: 'time',
             time: {
               unit: timeUnit,
-              tooltipFormat: 'dd.MM.yyyy HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM', month: 'MMM yyyy' },
+              tooltipFormat: 'dd.MM.yyyy HH:mm',
+              displayFormats: {
+                minute: 'HH:mm', day: 'dd MMM', month: 'MMM yyyy',
+                hour: view && view.max - view.min > 86400000 ? 'dd.MM. HH:mm' : 'HH:mm',
+              },
             },
-            min: periodStart.getTime(),
-            max: periodEnd.getTime(),
+            min: view ? view.min : periodStart.getTime(),
+            max: view ? view.max : periodEnd.getTime(),
             ticks: { color: '#8b949e', maxTicksLimit: 14, font: { size: 10 }, maxRotation: 45 },
             grid: { color: 'rgba(48, 54, 61, 0.3)' },
             offset: true,
@@ -1068,6 +1507,7 @@ class EnergyDashboard {
     const canvas = document.getElementById('energy-chart');
     if (canvas) {
       this.chart = new Chart(canvas, config);
+      this.chart._fine = fine ? { minutes: fine.minutes, from: fine.from, to: fine.to } : null;
     }
   }
 
@@ -1140,6 +1580,7 @@ class EnergyDashboard {
     const fields = [
       ['consumption-value', d.consumption],
       ['production-value', d.production],
+      ['imported-value', d.grid_import],
       ['exported-value', d.grid_export],
       ['self-consumed-value', d.self_consumed],
       ['heatpump-value', this.heatpumpData.electric],
@@ -1197,7 +1638,7 @@ class EnergyDashboard {
     if (d.__dynamicCosts) {
       totalCost = d.__dynamicCosts.totalCost + proratedFee;
     } else {
-      const rate = this.config.electricityRate || d.__rate || 0;
+      const rate = this.getRate(d);
       totalCost = (d.grid_import || 0) * rate + proratedFee;
     }
     this.setEl('energy-cost', totalCost.toFixed(2));
@@ -1318,13 +1759,401 @@ class EnergyDashboard {
     });
   }
 
+  // ── Gas & Wasser ──────────────────────────────────────────────
+  // Zähler in m³ aus den Einstellungen (Gas/Wasser). Preise, Brennwert und
+  // Zustandszahl kommen aus den Tarifen (this._tariffs, siehe loadTarife).
+  get _gasEntities() {
+    const g = this.config.entities?.gas || {};
+    return { meter: g.meter || '', outdoor: g.outdoor || '' };
+  }
+
+  get _waterEntities() {
+    return { meter: this.config.entities?.water?.meter || '' };
+  }
+
+  // Reiter nur, wenn eingeschaltet und ein Zähler eingetragen ist
+  isGasEnabled()   { return (this.config.gasEnabled ?? true) && !!this._gasEntities.meter; }
+  isWaterEnabled() { return (this.config.waterEnabled ?? true) && !!this._waterEntities.meter; }
+
+  // Verbrauch eines Zählers im aktuellen Zeitraum, in Zählereinheiten.
+  // Summe und Balken aus der Differenz der Zählerstände: Die Statistik-„change“
+  // ist bei Lesefehlern mit Rücksprung unbrauchbar (zählt als Zähler-Reset).
+  async loadMeterSeries(entityId) {
+    const period = this.currentPeriod;
+    const { start, end } = this.getTimeBounds(period);
+    const agg = ['this_year', 'last_year'].includes(period) ? 'month' : this.getChartAggregation(period);
+    // Einen Bucket vor dem Start mitholen: dessen Zählerstand ist der Ausgangswert
+    const fetchStart = new Date(start);
+    if (agg === 'hour') fetchStart.setHours(fetchStart.getHours() - 1);
+    else if (agg === 'day') fetchStart.setDate(fetchStart.getDate() - 1);
+    else fetchStart.setMonth(fetchStart.getMonth() - 1);
+
+    const [stats, live] = await Promise.all([
+      this.getStatistics(entityId, fetchStart, end, agg),
+      this.getState(entityId),
+    ]);
+    const startMs = start.getTime();
+    const ts = (s) => new Date(s.start).getTime();
+    const rows = stats.filter(s => s.state != null);
+    const before = rows.filter(s => ts(s) < startMs);
+    const inside = rows.filter(s => ts(s) >= startMs);
+
+    const base = before.length ? before[before.length - 1].state
+               : (inside.length ? inside[0].state : null);
+    let prev = base;
+    const bars = [];
+    for (const s of inside) {
+      bars.push({ x: ts(s), y: prev != null ? Math.max(0, s.state - prev) : 0 });
+      prev = s.state;
+    }
+
+    // Laufender Zeitraum: Live-Zählerstand, angefangener Bucket als eigener Balken
+    const isRunning = end.getTime() >= Date.now() - 60000;
+    let last = inside.length ? inside[inside.length - 1].state : base;
+    if (isRunning && live > 0) {
+      const now = new Date();
+      const bucket = agg === 'hour' ? new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours())
+                   : agg === 'day' ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
+                   : new Date(now.getFullYear(), now.getMonth(), 1);
+      if (!bars.length || bars[bars.length - 1].x < bucket.getTime()) {
+        bars.push({ x: bucket.getTime(), y: last != null ? Math.max(0, live - last) : 0 });
+      }
+      last = live;
+    }
+
+    const total = base != null && last != null ? Math.max(0, last - base) : 0;
+    const days = Math.max(0, (end - start) / 86400000);
+    return { start, end, agg, bars, total, days };
+  }
+
+  // Kostenseite: Gas- und Wasserzeilen und Gesamtsumme. Wird von der
+  // Stromberechnung (updateInvoiceTab) und nach Gas/Wasser aufgerufen.
+  // undefined = wird noch geladen, null = ausgeschaltet.
+  updateInvoiceExtras() {
+    const eur = (v) => v.toFixed(2) + ' €';
+    const g = this._gasInv;
+    const w = this._waterInv;
+
+    if (g) {
+      this.setEl('inv-gas-total', eur(g.total));
+      this.setEl('inv-gas-qty', `${g.m3.toFixed(2)} m³ = ${g.kwh.toFixed(1)} kWh`);
+      this.setEl('inv-gas-rate', `${g.preisCt.toFixed(2)} ct/kWh`);
+      this.setEl('inv-gas-cost', eur(g.arbeit));
+      this.setEl('inv-gas-days', this.fmtDays(g.days));
+      this.setEl('inv-gas-monthly', `${g.grundMonat.toFixed(2)} €/Monat`);
+      this.setEl('inv-gas-base', eur(g.grund));
+    }
+    if (w) {
+      this.setEl('inv-water-total', eur(w.total));
+      this.setEl('inv-water-qty', `${w.m3.toFixed(3)} m³`);
+      this.setEl('inv-water-rate', `${w.preis.toFixed(3)} €/m³`);
+      this.setEl('inv-water-cost', eur(w.frischArbeit));
+      this.setEl('inv-waste-qty', `${w.m3.toFixed(3)} m³`);
+      this.setEl('inv-waste-rate', `${w.abwPreis.toFixed(3)} €/m³`);
+      this.setEl('inv-waste-cost', eur(w.abwArbeit));
+      this.setEl('inv-water-days', this.fmtDays(w.days));
+      this.setEl('inv-water-monthly', `${w.grundMonat.toFixed(2)} €/Monat`);
+      this.setEl('inv-water-base', eur(w.grund));
+    }
+
+    const strom = this._invStromToPay;
+    const loading = strom === undefined || g === undefined || w === undefined;
+    const total = (strom || 0) + (g ? g.total : 0) + (w ? w.total : 0);
+    for (const id of ['inv-net-balance', 'inv-grand-total']) {
+      this.setEl(id, loading ? '…' : eur(total));
+      const el = document.getElementById(id);
+      if (el) el.style.color = loading ? '' : (total <= 0 ? 'var(--accent-green)' : 'var(--accent-red)');
+    }
+  }
+
+  // „1 Tag“ / „n Tage“
+  fmtDays(days) {
+    const n = Math.round(days);
+    return `${n} ${n === 1 ? 'Tag' : 'Tage'}`;
+  }
+
+  // Anteiliger Grundpreis für den Zeitraum (Monat = 365,25 / 12 Tage)
+  proratedMonthly(perMonth, days) {
+    return perMonth * days / (365.25 / 12);
+  }
+
+  async updateGasTab() {
+    if (!this.isGasEnabled()) { this._gasInv = null; this.updateInvoiceExtras(); return; }
+    try {
+      const g = this._gasEntities;
+      const t = this._tariffs || {};
+      this.setEl('gas-period-label', this.getPeriodLabel(this.currentPeriod));
+
+      const series = await this.loadMeterSeries(g.meter);
+      const brennwert = t.gas_brennwert || 0;
+      const zustandszahl = t.gas_zustandszahl || 0;
+      const preisCt = t.gas_arbeitspreis || 0;
+      const grundMonat = t.gas_grundpreis || 0;
+      const { start, end, agg, days } = series;
+      const kwhPerM3 = brennwert * zustandszahl;
+      const m3 = series.total;
+      const kwh = m3 * kwhPerM3;
+      const arbeit = kwh * preisCt / 100;
+      const grund = this.proratedMonthly(grundMonat, days);
+      const cost = arbeit + grund;
+      this._gasInv = { m3, kwh, preisCt, grundMonat, arbeit, grund, days, total: cost };
+      this.updateInvoiceExtras();
+
+      this.setEl('gas-m3', m3.toFixed(2));
+      this.setEl('gas-kwh', kwh.toFixed(kwh >= 100 ? 1 : 2));
+      this.setEl('gas-cost', cost.toFixed(2));
+      this.setEl('gas-avg', (kwh / Math.max(1, days)).toFixed(2));
+      this.setEl('gas-note',
+        `Umrechnung ${kwhPerM3.toFixed(4)} kWh/m³ (Brennwert × Zustandszahl) · ` +
+        `Arbeitspreis ${preisCt} ct/kWh · Grundpreis ${grundMonat} €/Monat anteilig · ` +
+        `gerechnet mit den aktuellen Preisen, auch für vergangene Zeiträume.`);
+
+      const tempStats = g.outdoor ? await this.getStatistics(g.outdoor, start, end, agg) : [];
+      const temps = tempStats
+        .filter(s => s.mean != null)
+        .map(s => ({ x: new Date(s.start).getTime(), y: s.mean }));
+      this.renderMeterChart({
+        canvasId: 'gas-chart', chartKey: '_gasChart',
+        label: 'Gas', unit: 'kWh', digits: 2,
+        color: '245, 158, 11', border: '#f59e0b',
+        bars: series.bars.map(b => ({ x: b.x, y: b.y * kwhPerM3 })),
+        temps, start, end, agg,
+      });
+    } catch (e) {
+      console.warn('Gas tab update failed:', e.message);
+      this._gasInv = null; this.updateInvoiceExtras();
+    }
+  }
+
+  async updateWaterTab() {
+    if (!this.isWaterEnabled()) { this._waterInv = null; this.updateInvoiceExtras(); return; }
+    try {
+      const w = this._waterEntities;
+      const t = this._tariffs || {};
+      this.setEl('water-period-label', this.getPeriodLabel(this.currentPeriod));
+
+      const series = await this.loadMeterSeries(w.meter);
+      const preis = t.wasser_preis || 0;
+      const grund = t.wasser_grundpreis || 0;
+      const abwPreis = t.abwasser_preis || 0;
+      const abwGrund = t.abwasser_grundpreis || 0;
+      const { start, end, agg, days } = series;
+      const m3 = series.total;
+      const frisch = m3 * preis + this.proratedMonthly(grund, days);
+      const abwasser = m3 * abwPreis + this.proratedMonthly(abwGrund, days);
+      this._waterInv = {
+        m3, preis, abwPreis, days,
+        grundMonat: grund + abwGrund,
+        frischArbeit: m3 * preis,
+        abwArbeit: m3 * abwPreis,
+        grund: this.proratedMonthly(grund + abwGrund, days),
+        total: frisch + abwasser,
+      };
+      this.updateInvoiceExtras();
+
+      this.setEl('water-m3', m3.toFixed(3));
+      this.setEl('water-fresh-cost', frisch.toFixed(2));
+      this.setEl('water-waste-cost', abwasser.toFixed(2));
+      this.setEl('water-cost', (frisch + abwasser).toFixed(2));
+      this.setEl('water-avg', Math.round(m3 * 1000 / Math.max(1, days)).toString());
+      this.setEl('water-note',
+        `Frischwasser ${preis} €/m³ + Grundpreis ${grund} €/Monat · ` +
+        `Abwasser ${abwPreis} €/m³ (nach Frischwasser-m³)` +
+        (abwGrund > 0 ? ` + Grundpreis ${abwGrund} €/Monat` : '') +
+        ` · Grundpreise anteilig · gerechnet mit den aktuellen Preisen.`);
+
+      this.renderMeterChart({
+        canvasId: 'water-chart', chartKey: '_waterChart',
+        label: 'Wasser', unit: 'l', digits: 0,
+        color: '56, 189, 248', border: '#38bdf8',
+        bars: series.bars.map(b => ({ x: b.x, y: b.y * 1000 })),
+        temps: null, start, end, agg,
+      });
+    } catch (e) {
+      console.warn('Water tab update failed:', e.message);
+      this._waterInv = null; this.updateInvoiceExtras();
+    }
+  }
+
+  // Balkendiagramm für Zählerverbrauch, optional mit Außentemperatur-Linie
+  renderMeterChart({ canvasId, chartKey, label, unit, digits, color, border, bars, temps, start, end, agg }) {
+    if (this[chartKey]) this[chartKey].destroy();
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const timeUnit = { hour: 'hour', day: 'day', month: 'month' }[agg] || 'day';
+
+    const datasets = [{
+      type: 'bar',
+      label: `${label} (${unit})`,
+      data: bars,
+      yAxisID: 'y',
+      backgroundColor: `rgba(${color}, 0.65)`,
+      borderColor: border,
+      borderWidth: 1,
+      borderRadius: 4,
+      barPercentage: 0.7,
+      categoryPercentage: 0.8,
+      order: 2,
+    }];
+    const scales = {
+      x: {
+        type: 'time',
+        time: { unit: timeUnit, tooltipFormat: 'dd.MM.yyyy HH:mm', displayFormats: { hour: 'HH:mm', day: 'dd MMM', month: 'MMM yyyy' } },
+        min: start.getTime(), max: end.getTime(),
+        ticks: { color: '#8b949e', maxTicksLimit: 14, font: { size: 10 }, maxRotation: 45 },
+        grid: { color: 'rgba(48, 54, 61, 0.3)' },
+        offset: true,
+      },
+      y: {
+        beginAtZero: true,
+        position: 'left',
+        ticks: { color: '#8b949e', font: { size: 10 }, callback: (v) => `${v} ${unit}` },
+        grid: { color: 'rgba(48, 54, 61, 0.3)' },
+      },
+    };
+    if (temps) {
+      datasets.push({
+        type: 'line',
+        label: 'Außentemperatur (°C)',
+        data: temps,
+        yAxisID: 'yTemp',
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.3,
+        order: 1,
+      });
+      scales.yTemp = {
+        position: 'right',
+        ticks: { color: '#3b82f6', font: { size: 10 }, callback: (v) => `${v} °C` },
+        grid: { drawOnChartArea: false },
+      };
+    }
+
+    this[chartKey] = new Chart(canvas, {
+      type: 'bar',
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#8b949e', usePointStyle: true, pointStyle: 'rectRounded', padding: 16, font: { size: 12 } } },
+          tooltip: {
+            backgroundColor: 'rgba(13, 17, 23, 0.95)',
+            titleColor: '#e6edf3', bodyColor: '#b1bac4',
+            borderColor: '#30363d', borderWidth: 1, padding: 12, cornerRadius: 8,
+            callbacks: {
+              label: (ctx) => ctx.dataset.yAxisID === 'yTemp'
+                ? `${ctx.dataset.label}: ${(ctx.parsed.y ?? 0).toFixed(1)} °C`
+                : `${ctx.dataset.label}: ${(ctx.parsed.y ?? 0).toFixed(digits)} ${unit}`,
+            },
+          },
+        },
+        scales,
+      },
+    });
+  }
+
+  // ── Tarife ───────────────────────────────────────────────────
+  // Jeder Tarif ist eine Zahl in den Einstellungen (config.tariffs). Ist unter
+  // „Tarife aus HA-Entitäten“ eine input_number eingetragen (config.tariffEntities),
+  // gilt live deren Wert; Änderungen im Formular werden dann dorthin geschrieben,
+  // sodass z. B. Kostensensoren in HA dieselben Preise nutzen.
+  _tariffKeys = [
+    'strom_arbeitspreis', 'strom_grundpreis',                     // ct/kWh, €/Monat
+    'pv_anlagenleistung', 'einspeisung_leistungsgrenze',          // kWp
+    'einspeisung_verguetung_bis_grenze', 'einspeisung_verguetung_ueber_grenze',  // ct/kWh
+    'gas_arbeitspreis', 'gas_grundpreis',                         // ct/kWh, €/Monat
+    'gas_brennwert', 'gas_zustandszahl',                          // kWh/m³, Faktor
+    'wasser_preis', 'wasser_grundpreis',                          // €/m³, €/Monat
+    'abwasser_preis', 'abwasser_grundpreis',                      // €/m³, €/Monat
+  ];
+
+  // Ohne gespeicherte Tarife: Werte der bisherigen Felder Strompreis,
+  // Grundgebühr und Einspeisevergütung übernehmen
+  _legacyTariffs() {
+    return {
+      strom_arbeitspreis: Math.round((this.config.electricityRate ?? 0.30) * 10000) / 100,
+      strom_grundpreis: this.config.baseFee ?? 0,
+      einspeisung_verguetung_bis_grenze: Math.round((this.config.feedInRate ?? 0.08) * 10000) / 100,
+    };
+  }
+
+  async loadTarife() {
+    const stored = this.config.tariffs || this._legacyTariffs();
+    const ents = this.config.tariffEntities || {};
+    const ids = this._tariffKeys.map(k => ents[k]).filter(Boolean);
+    const live = ids.length ? await this.getStates(ids) : {};
+    const t = {};
+    for (const k of this._tariffKeys) {
+      t[k] = ents[k] ? (live[ents[k]] || 0) : (Number(stored[k]) || 0);
+    }
+    this._tariffs = t;
+    this.applyTariffs(t);
+  }
+
+  // Strompreis, Grundgebühr und Einspeisevergütung für Kennzahlen und Kostenseite
+  applyTariffs(t) {
+    if (t.strom_arbeitspreis > 0) this.config.electricityRate = t.strom_arbeitspreis / 100;
+    this.config.baseFee = t.strom_grundpreis || 0;
+    // EEG-Mischpreis nach Leistung: bis zur Schwelle der höhere Satz, darüber der niedrigere
+    const anlage = t.pv_anlagenleistung || 0;
+    const grenze = t.einspeisung_leistungsgrenze || 0;
+    this.config.feedInRate = anlage > 0 && anlage > grenze
+      ? (grenze * t.einspeisung_verguetung_bis_grenze + (anlage - grenze) * t.einspeisung_verguetung_ueber_grenze) / anlage / 100
+      : (t.einspeisung_verguetung_bis_grenze || 0) / 100;
+  }
+
+  populateTarifFields() {
+    const t = this._tariffs || {};
+    const ents = this.config.tariffEntities || {};
+    for (const el of document.querySelectorAll('[data-tarif]')) {
+      const v = t[el.dataset.tarif];
+      el.value = v ?? '';
+      el.dataset.loaded = String(v ?? '');
+    }
+    for (const el of document.querySelectorAll('[data-tarif-entity]')) {
+      el.value = ents[el.dataset.tarifEntity] || '';
+    }
+  }
+
+  // Liest das Formular, schreibt geänderte Werte verknüpfter input_number nach HA
+  // und liefert { tariffs, tariffEntities } für die Einstellungen.
+  async saveTarifFields() {
+    const tariffs = { ...(this.config.tariffs || this._legacyTariffs()) };
+    const tariffEntities = {};
+    for (const el of document.querySelectorAll('[data-tarif-entity]')) {
+      const v = el.value.trim();
+      if (v) tariffEntities[el.dataset.tarifEntity] = v;
+    }
+    for (const el of document.querySelectorAll('[data-tarif]')) {
+      const key = el.dataset.tarif;
+      const v = parseFloat(el.value);
+      if (isNaN(v)) continue;
+      tariffs[key] = v;
+      const changed = !(String(v) === el.dataset.loaded || v === parseFloat(el.dataset.loaded));
+      if (tariffEntities[key] && changed) {
+        await this.fetchAPI('/api/services/input_number/set_value', {
+          method: 'POST',
+          body: JSON.stringify({ entity_id: tariffEntities[key], value: v }),
+        });
+      }
+      el.dataset.loaded = String(v);
+    }
+    this.config.tariffs = tariffs;
+    this.config.tariffEntities = tariffEntities;
+    return { tariffs, tariffEntities };
+  }
+
   updateInvoiceTab() {
     const d = this.energyData;
     const dc = d.__dynamicCosts;
-    const currentRate = this.config.electricityRate || d.__rate || 0;
+    const currentRate = this.getRate(d);
     const fixedRate = this.config.fixedElectricityRate || currentRate;
     const rate = dc ? dc.avgRate : currentRate;
-    const compensation = this.config.feedInRate || d.__compensation || 0;
+    const compensation = this.getCompensation(d);
     const imported = d.grid_import || 0;
     const exported = d.grid_export || 0;
     const consumption = d.consumption || 0;
@@ -1402,7 +2231,7 @@ class EnergyDashboard {
 
     // Grundgebühr row
     this.setEl('inv-base-fee-monthly', monthlyBaseFee.toFixed(2) + ' €/Monat');
-    this.setEl('inv-base-fee-days', periodDays.toFixed(0) + ' Tage');
+    this.setEl('inv-base-fee-days', this.fmtDays(periodDays));
     this.setEl('inv-base-fee-cost', eur(proratedBaseFee));
     const baseFeeRow = document.getElementById('inv-base-fee-row');
     if (baseFeeRow) baseFeeRow.style.display = monthlyBaseFee > 0 ? '' : 'none';
@@ -1420,6 +2249,9 @@ class EnergyDashboard {
     if (netTotalEl) {
       netTotalEl.style.color = toPay <= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
     }
+    // Gesamtsumme inkl. Gas und Wasser (inv-net-balance wird dort überschrieben)
+    this._invStromToPay = toPay;
+    this.updateInvoiceExtras();
 
     // Wärmepumpe info rows
     const hp = this.heatpumpData || {};
@@ -1872,7 +2704,9 @@ class EnergyDashboard {
     const resetBtn = document.getElementById('reset-zoom-btn');
     if (resetBtn) {
       resetBtn.addEventListener('click', () => {
-        if (this.chart) this.chart.resetZoom();
+        // neu aufbauen (ganzer Zeitraum, Grundauflösung) –
+        // resetZoom() ginge nach einem Neuaufbau nur bis zum gezoomten Ausschnitt zurück
+        if (this.chart) this.renderChart();
         resetBtn.style.display = 'none';
       });
     }
@@ -1985,9 +2819,12 @@ class EnergyDashboard {
   ];
   _otherFields = [
     ['set-cum-consumption', 'cum_consumption'],
+    ['set-cum-consumption-detail', 'cum_consumption_detail'],
     ['set-cum-production', 'cum_production'],
     ['set-cum-grid-import', 'cum_grid_import'],
     ['set-cum-grid-export', 'cum_grid_export'],
+    ['set-cum-battery-charge', 'cum_battery_charge'],
+    ['set-cum-battery-discharge', 'cum_battery_discharge'],
     ['set-battery-soc', 'battery_soc'],
   ];
   // Field mapping: form ID → [category, period] into config.entities.energy
@@ -2052,6 +2889,14 @@ class EnergyDashboard {
       if (s.entities?.cost) {
         this.config.entities.cost = { ...(this.config.entities.cost || {}), ...s.entities.cost };
       }
+      // Gas-/Wasserzähler, Außentemperatur, PV-Prognose
+      if (s.entities?.gas) this.config.entities.gas = { ...(this.config.entities.gas || {}), ...s.entities.gas };
+      if (s.entities?.water) this.config.entities.water = { ...(this.config.entities.water || {}), ...s.entities.water };
+      if (Object.prototype.hasOwnProperty.call(s.entities || {}, 'forecast')) this.config.entities.forecast = s.entities.forecast;
+      if (Object.prototype.hasOwnProperty.call(s, 'statsValidFrom')) this.config.statsValidFrom = s.statsValidFrom;
+      // Tarife (Zahlen) und optional verknüpfte input_number
+      if (s.tariffs && typeof s.tariffs === 'object') this.config.tariffs = s.tariffs;
+      if (s.tariffEntities && typeof s.tariffEntities === 'object') this.config.tariffEntities = s.tariffEntities;
 
       // Numbers
       if (typeof s.refLimit === 'number' && s.refLimit > 0) this.config.refLimit = s.refLimit;
@@ -2064,9 +2909,21 @@ class EnergyDashboard {
         if (!this.config.ui) this.config.ui = {};
         this.config.ui.refreshInterval = s.ui.refreshInterval;
       }
+      // Darstellung: Logo-Farbe, Untertitel, erster Reiter, Reihenfolge der Kacheln
+      for (const key of ['logoColor', 'logoSubtitle', 'mainTabLabel', 'statOrder']) {
+        if (typeof s.ui?.[key] === 'string') {
+          if (!this.config.ui) this.config.ui = {};
+          this.config.ui[key] = s.ui[key];
+        }
+      }
 
       // Wärmepumpe an/aus (default: an, außer explizit ausgeschaltet)
       this.config.heatpumpEnabled = s.heatpumpEnabled !== false;
+      // Gas/Wasser an/aus (default: an; Reiter erscheint nur mit eingetragenem Zähler)
+      this.config.gasEnabled = s.gasEnabled !== false;
+      this.config.waterEnabled = s.waterEnabled !== false;
+      // Tarife (überschreiben electricityRate/feedInRate/baseFee)
+      try { await this.loadTarife(); } catch (e) { console.warn('Tarife load failed:', e.message); }
 
       // Rate entity mode: only touch config.js's rateEntity if Settings was
       // actually saved at least once (storage key present) — otherwise an
@@ -2081,6 +2938,8 @@ class EnergyDashboard {
     } catch (e) {
       console.warn('Settings load failed, using config.js defaults:', e.message);
       if (this.config.heatpumpEnabled === undefined) this.config.heatpumpEnabled = true;
+      if (this.config.gasEnabled === undefined) this.config.gasEnabled = true;
+      if (this.config.waterEnabled === undefined) this.config.waterEnabled = true;
     }
   }
 
@@ -2105,9 +2964,12 @@ class EnergyDashboard {
 
     // Cumulative + battery
     setVal('set-cum-consumption', c.consumption);
+    setVal('set-cum-consumption-detail', c.consumption_detail);
     setVal('set-cum-production', c.production);
     setVal('set-cum-grid-import', c.grid_import);
     setVal('set-cum-grid-export', c.grid_export);
+    setVal('set-cum-battery-charge', c.battery_charge);
+    setVal('set-cum-battery-discharge', c.battery_discharge);
     setVal('set-battery-soc', this.config.entities?.battery_soc);
 
     // Energy-Aggregate (Tag/Woche/Monat/Jahr pro Kategorie)
@@ -2126,7 +2988,19 @@ class EnergyDashboard {
     // Wärmepumpe an/aus
     const hpToggle = document.getElementById('set-heatpump-enabled');
     if (hpToggle) hpToggle.checked = this.config.heatpumpEnabled ?? true;
+    const gasToggle = document.getElementById('set-gas-enabled');
+    if (gasToggle) gasToggle.checked = this.config.gasEnabled ?? true;
+    const waterToggle = document.getElementById('set-water-enabled');
+    if (waterToggle) waterToggle.checked = this.config.waterEnabled ?? true;
     this.applyHeatpumpVisibility();
+    this.populateTarifFields();
+
+    // Gas, Wasser, PV-Prognose, Statistik gültig ab
+    setVal('set-gas-meter', this.config.entities?.gas?.meter);
+    setVal('set-gas-outdoor', this.config.entities?.gas?.outdoor);
+    setVal('set-water-meter', this.config.entities?.water?.meter);
+    setVal('set-forecast-entity', this.config.entities?.forecast);
+    setVal('set-stats-valid-from', this.config.statsValidFrom);
 
     // Numbers
     setVal('set-ref-limit', this.config.refLimit ?? 5);
@@ -2134,6 +3008,13 @@ class EnergyDashboard {
     setVal('set-feed-in-rate', this.config.feedInRate ?? 0.08);
     setVal('set-base-fee', this.config.baseFee ?? 0);
     setVal('set-refresh-interval', (this.config.ui?.refreshInterval ?? 30000) / 1000);
+
+    // Darstellung
+    setVal('set-logo-color', this.config.ui?.logoColor);
+    setVal('set-logo-subtitle', this.config.ui?.logoSubtitle);
+    setVal('set-main-tab-label', this.config.ui?.mainTabLabel);
+    setVal('set-stat-order', this.config.ui?.statOrder);
+    setVal('set-rate-entity-dyn', this.config.rateEntity || '');
 
     // Rate mode
     const hasEntity = this.config.rateEntity && this.config.rateEntity !== '';
@@ -2158,6 +3039,54 @@ class EnergyDashboard {
     });
     if (!enabled && this.currentTab === 'heatpump') {
       document.querySelector('.nav-item[data-tab="dashboard"]')?.click();
+    }
+
+    // Gas und Wasser: gleiche Logik, nur mit eingetragenem Zähler
+    const gasEnabled = this.isGasEnabled();
+    document.querySelectorAll('[data-feature="gas"]').forEach(el => {
+      el.style.display = gasEnabled ? '' : 'none';
+    });
+    if (!gasEnabled && this.currentTab === 'gas') {
+      document.querySelector('.nav-item[data-tab="dashboard"]')?.click();
+    }
+
+    const waterEnabled = this.isWaterEnabled();
+    document.querySelectorAll('[data-feature="water"]').forEach(el => {
+      el.style.display = waterEnabled ? '' : 'none';
+    });
+    if (!waterEnabled && this.currentTab === 'water') {
+      document.querySelector('.nav-item[data-tab="dashboard"]')?.click();
+    }
+
+    this.applyUiSettings();
+  }
+
+  // Darstellung aus den Einstellungen: Logo-Farbe, Untertitel, Name des ersten
+  // Reiters, Reihenfolge der Kacheln (data-stat). Leere Werte = Standard.
+  applyUiSettings() {
+    const ui = this.config.ui || {};
+    const logo = document.querySelector('.energy-logo');
+    if (logo) logo.style.color = ui.logoColor || '';
+    const sub = document.getElementById('logo-subtitle');
+    if (sub) {
+      const text = ui.logoSubtitle === '-' ? '' : (ui.logoSubtitle || 'Dashboard');
+      sub.textContent = text;
+      sub.style.display = text ? '' : 'none';
+    }
+    const mainLabel = document.getElementById('nav-main-label');
+    if (mainLabel) mainLabel.textContent = ui.mainTabLabel || 'Dashboard';
+
+    const grid = document.getElementById('stats-grid');
+    if (grid) {
+      if (!this._defaultStatOrder) {
+        this._defaultStatOrder = [...grid.querySelectorAll('[data-stat]')].map(el => el.dataset.stat);
+      }
+      const wanted = (ui.statOrder || '').split(',').map(s => s.trim()).filter(Boolean);
+      const order = [...wanted, ...this._defaultStatOrder.filter(k => !wanted.includes(k))];
+      for (const key of order) {
+        const el = grid.querySelector(`[data-stat="${key}"]`);
+        if (el) grid.appendChild(el);
+      }
     }
   }
 
@@ -2206,6 +3135,14 @@ class EnergyDashboard {
       }
 
       const heatpumpEnabled = document.getElementById('set-heatpump-enabled')?.checked ?? true;
+      const gasEnabled = document.getElementById('set-gas-enabled')?.checked ?? true;
+      const waterEnabled = document.getElementById('set-water-enabled')?.checked ?? true;
+
+      // Tarife: verknüpfte input_number in HA schreiben, Zahlen in die Einstellungen.
+      // Strompreis, Grundgebühr und Einspeisevergütung daraus ableiten und
+      // zusätzlich in den bisherigen Feldern speichern (Rückfall für ältere Versionen).
+      const { tariffs, tariffEntities } = await this.saveTarifFields();
+      this.applyTariffs({ ...Object.fromEntries(this._tariffKeys.map(k => [k, 0])), ...tariffs });
 
       await this.fetchAPI(this._settingsUrl, {
         method: 'POST',
@@ -2216,15 +3153,27 @@ class EnergyDashboard {
             battery_soc: batterySoc,
             energy: energyObj,
             cost: costObj,
+            gas: { meter: getVal('set-gas-meter'), outdoor: getVal('set-gas-outdoor') },
+            water: { meter: getVal('set-water-meter') },
+            forecast: getVal('set-forecast-entity'),
           },
           refLimit: parseFloat(getVal('set-ref-limit')) || 5,
-          electricityRate: parseFloat(getVal('set-electricity-rate')) || 0.30,
-          feedInRate: parseFloat(getVal('set-feed-in-rate')) || 0.08,
-          baseFee: parseFloat(getVal('set-base-fee')) || 0,
-          rateEntity: getVal('set-rate-mode') === 'entity' ? getVal('set-rate-entity') : '',
+          electricityRate: this.config.electricityRate,
+          feedInRate: this.config.feedInRate,
+          baseFee: this.config.baseFee,
+          rateEntity: getVal('set-rate-entity-dyn'),
+          tariffs,
+          tariffEntities,
+          statsValidFrom: getVal('set-stats-valid-from'),
           heatpumpEnabled,
+          gasEnabled,
+          waterEnabled,
           ui: {
             refreshInterval: (parseFloat(getVal('set-refresh-interval')) || 30) * 1000,
+            logoColor: getVal('set-logo-color'),
+            logoSubtitle: getVal('set-logo-subtitle'),
+            mainTabLabel: getVal('set-main-tab-label'),
+            statOrder: getVal('set-stat-order'),
           },
         }),
       });
@@ -2353,4 +3302,17 @@ class EnergyDashboard {
 
 document.addEventListener('DOMContentLoaded', () => {
   window.dashboard = new EnergyDashboard();
+});
+
+// ☰ öffnet das HA-Menü. Das Panel-Element im
+// HA-Frontend (Elternfenster) sendet dasselbe Ereignis wie HAs eigener Menüknopf.
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('ha-menu-btn')?.addEventListener('click', () => {
+    try {
+      const host = window.frameElement?.getRootNode()?.host || window.frameElement;
+      host?.dispatchEvent(new CustomEvent('hass-toggle-menu', { bubbles: true, composed: true }));
+    } catch (e) {
+      console.warn('HA-Menü nicht erreichbar:', e.message);
+    }
+  });
 });

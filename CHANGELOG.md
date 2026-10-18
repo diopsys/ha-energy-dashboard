@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.5.0] - 2026-10-18
+
+### Added
+- **Gas- und Wasser-Tab** mit eigenem Schalter: Verbrauch aus der Differenz der Zählerstände (robust gegen
+  Lesefehler mit Rücksprung), Umrechnung m³ → kWh über Brennwert × Zustandszahl, Kosten inkl. anteiligem
+  Grundpreis, Abwasser nach Frischwasser-m³, optional Außentemperatur im Gas-Diagramm. Zähler unter Einstellungen.
+- **Tarife** in den Einstellungen (Strom, Einspeisung, Gas, Wasser/Abwasser), je Tarif optional mit einer
+  `input_number` verknüpft. Einspeisevergütung als EEG-Mischpreis nach Leistung (Schwelle, z.B. 10 kWp).
+  Ohne gespeicherte Tarife werden Strompreis, Grundgebühr und Einspeisevergütung übernommen.
+- **Kostenseite** mit Gas und Wasser, „Zu zahlen gesamt“ = Strom + Gas + Wasser; Kacheln 2 × 3.
+- **PV-Prognose** im Energieprofil bei „Heute“ (gestrichelte Linie, optional p10–p90-Band), Sensor unter Einstellungen.
+- **Zoom-abhängige Auflösung** im Energieprofil: Tag → Stunde → 30/15/10/5 min, je nach sichtbarem Zeitraum
+  (unter 1 h aus der 5-min-Statistik, die HA 10 Tage hält).
+- **kW-Ansicht über 14 Tage**: je Tag die Tagesspitze (höchste Stundenleistung) statt Tagesmittel.
+- **Kachel Netzbezug**; Reihenfolge der Kacheln, Logo-Farbe, Untertitel und Name des ersten Reiters einstellbar.
+- **Batterie-Gesamtzähler** (geladen/entladen) unter den kumulativen Sensoren.
+- **Mehrere Entitäten je kumulativem Sensor** (`a,b,-c`), z.B. Erzeugung = MPPT1 + MPPT2.
+- **„Verbrauch fein“**: direkt messender Verbrauchszähler für Balken bis 1 h (bei Lücken gilt der Hauptzähler).
+- **„Statistik gültig ab“**: Zählerstände vor diesem Zeitpunkt werden ignoriert.
+- **☰-Knopf** öffnet in schmaler Ansicht (HA-App) das HA-Menü.
+
+### Fixed
+- **Laufende Zeiträume ohne Aggregat-Sensoren** zeigten nichts, obwohl der Hinweis „Ohne Eintrag wird aus den
+  kumulativen Sensoren berechnet“ das versprach. Heute/Woche/Monat/Jahr werden jetzt aus den Gesamtzählern berechnet
+  (aktueller Stand minus Stand zu Periodenbeginn).
+- **Sprünge in der Statistik**: Energiemengen (Kennzahlen, Diagramme) als Differenz der Zählerstände statt Summe der
+  `change`-Werte. Diese springen, wenn HA die Summen neu aufsetzt (z.B. Statistik-Import: +46.864 kWh in 5 min).
+- **Batterie bei Woche/Monat** zeigte nur den stärksten Tag (Maximum des Tageszählers).
+- **kW-Ansicht bei langen Zeiträumen** 1000-fach zu hoch bei Wh-Zählern (fehlende Umrechnung).
+- **Eigenverbrauch größer als Verbrauch** bei Anlagen mit Batterie: jetzt Verbrauch − Netzbezug
+  (vorher Erzeugung − Einspeisung, inkl. Batterieladung).
+- **Ersparnis immer 0 €** ohne Strompreis-Sensor: es gilt der Tarif, ein eingetragener Kosten-Sensor hat Vorrang.
+- **„invalid redirect uri“ in der iPhone-App**: Anmeldung über das Token des HA-Frontends im Elternfenster.
+- **Browser-Cache**: `panel.js` lädt `index.html` mit Zeitstempel, Änderungen sind nach einem Update sofort sichtbar.
+- „1 Tage“ → „1 Tag“.
+
+---
+
 ## [1.4.3] - 2026-09-15
 
 ### Fixed

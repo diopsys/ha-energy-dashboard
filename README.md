@@ -10,8 +10,11 @@ Ein vollständiges Energie-Dashboard für Home Assistant mit Solar, Batterie, Ne
 - **Zeiträume** – Gestern, diese Woche, letzter Monat, dieses Jahr, benutzerdefiniert
 - **Statistik-Karten** – Verbrauch, Erzeugung, Einspeisung, Eigenverbrauch, Autarkiegrad
 - **Wärmepumpe-Tab** – COP, thermische Energie, Heizen/Warmwasser-Aufschlüsselung
-- **Interaktive Charts** – Balken- und Liniendiagramme mit Zoom
-- **Kosten** – Stromkosten mit dynamischem oder festem Tarif
+- **Interaktive Charts** – Balken- und Liniendiagramme mit Zoom; beim Hineinzoomen feinere Balken (Tag → Stunde → 30/15/10/5 min)
+- **Kosten** – Stromkosten mit dynamischem oder festem Tarif, Grundpreis, EEG-Mischpreis für Anlagen über 10 kWp
+- **Gas- und Wasser-Tab** (optional) – Verbrauch aus dem Zählerstand, Kosten inkl. Grundpreis und Abwasser, Außentemperatur
+- **PV-Prognose** (optional) – Prognose-Linie im Energieprofil, z.B. aus Helios Forecast
+- **HA-App** – Anmeldung über das HA-Frontend (auch in der iPhone-App) und ☰-Knopf für das HA-Menü
 
 ---
 
@@ -117,7 +120,21 @@ Alternativ zu `config.js` lassen sich alle Sensoren, Tarife und der Wärmepumpe-
 Im Dashboard unter **Einstellungen**:
 - Sensoren eintragen (Leistung, kumulative Energie, Energie-Aggregate, Kosten) — Tippen zeigt eine Autocomplete-Liste passender HA-Entities
 - **Wärmepumpe-Tab anzeigen** ausschalten, falls keine Wärmepumpe vorhanden ist (blendet Tab, Stat-Karte und Flow-Diagramm-Knoten aus)
+- **Tarife**: Arbeits- und Grundpreis für Strom, Gas und Wasser/Abwasser, Gas-Brennwert und Zustandszahl,
+  Einspeisevergütung mit Schwelle (EEG-Mischpreis nach Leistung). Jeder Tarif ist eine Zahl in den Einstellungen
+  oder optional live mit einer `input_number` verknüpft — dann schreibt das Panel Änderungen dorthin, sodass auch
+  Kostensensoren in HA dieselben Preise nutzen. Für dynamische Tarife (z.B. Tibber) gibt es ein Sensor-Feld.
+- **Gas / Wasser**: Zählerstand in m³ (mit Statistik) eintragen, optional Außentemperatur. Ohne Zähler bleibt der Tab ausgeblendet.
+- **Prognose & Statistik**: Sensor mit PV-Prognose (Attribut `forecast` mit 15-min-Werten `datetime`, `watts`, `p10`, `p90`)
+  und „Statistik gültig ab“, falls die HA-Statistik anfangs fehlerhafte Zählerstände enthält.
+- **Anzeige**: Logo-Farbe, Untertitel (`-` blendet ihn aus), Name des ersten Reiters, Reihenfolge der Kacheln
 - **Speichern** klicken
+
+Kumulative Sensoren dürfen mehrere Entitäten enthalten, die addiert bzw. mit `-` abgezogen werden,
+z.B. `sensor.mppt1,sensor.mppt2` oder `sensor.ac_energie,sensor.bezug,-sensor.einspeisung`. Optional gibt es
+„Verbrauch fein“: ein direkt messender Zähler, der für Balken bis 1 h genutzt wird. Energiemengen werden als
+Differenz der Zählerstände berechnet, nicht aus den `change`-Werten der Statistik — die springen, wenn HA die
+Summen neu aufsetzt (z.B. nach einem Statistik-Import).
 
 Werte, die hier eingetragen werden, überschreiben die Defaults aus `config.js`. Leer gelassene Felder fallen auf `config.js` zurück.
 
