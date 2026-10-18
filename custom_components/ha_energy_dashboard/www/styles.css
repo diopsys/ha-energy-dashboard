@@ -536,7 +536,8 @@ body {
 }
 .rate-mode-wrap .autocomplete-wrap { flex: 1; min-width: 180px; }
 .rate-mode-wrap .settings-number { flex: 0 0 120px; }
-.autocomplete-wrap { flex: 1; position: relative; }
+.autocomplete-wrap { flex: 1; position: relative; min-width: 0; }
+.autocomplete-wrap .settings-input { width: 100%; box-sizing: border-box; }
 .autocomplete-list {
   display: none; position: absolute; top: 100%; left: 0; right: 0;
   background: var(--bg-secondary); border: 1px solid var(--border-accent);
@@ -710,3 +711,30 @@ body {
   .rate-mode-wrap .settings-number { flex: none; max-width: 100%; }
   .settings-select { max-width: 100%; }
 }
+
+/* Reihenfolge der Kacheln: Liste mit ▲/▼ */
+.stat-order-list { flex: 1; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; max-width: 360px; }
+.stat-order-list li {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.5rem 0.35rem 0.75rem;
+  background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 6px;
+  font-size: 0.8rem; color: var(--text-primary);
+}
+.stat-order-list li span { flex: 1; }
+.stat-order-list button {
+  background: none; border: 1px solid var(--border-primary); color: var(--text-secondary);
+  border-radius: 4px; width: 1.8rem; height: 1.6rem; cursor: pointer; font-size: 0.7rem;
+}
+.stat-order-list button:hover:not(:disabled) { color: var(--text-primary); border-color: var(--accent-blue); }
+.stat-order-list button:disabled { opacity: 0.3; cursor: default; }
+
+/* Einklappbare Bereiche „Erweitert“ in den Einstellungen */
+.settings-advanced { margin-top: 0.75rem; border-top: 1px solid var(--border-primary); padding-top: 0.5rem; }
+.settings-advanced > summary {
+  cursor: pointer; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);
+  padding: 0.25rem 0; list-style: none; user-select: none;
+}
+.settings-advanced > summary::-webkit-details-marker { display: none; }
+.settings-advanced > summary::before { content: '▸'; display: inline-block; width: 1rem; transition: transform 0.15s; }
+.settings-advanced[open] > summary::before { transform: rotate(90deg); }
+.settings-advanced > summary:hover { color: var(--text-primary); }
+.settings-advanced[open] > summary { margin-bottom: 0.75rem; }

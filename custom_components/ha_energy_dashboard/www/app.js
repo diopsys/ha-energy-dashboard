@@ -717,7 +717,7 @@ class EnergyDashboard {
 
   // Preisquelle. Ein in den Einstellungen
   // eingetragener Sensor (Kosten-Sensoren → rate / compensation) hat Vorrang,
-  // sofern er einen Wert liefert; sonst gelten die Tarife (input_number in HA).
+  // sofern er einen Wert liefert; sonst gelten die Tarife aus den Einstellungen.
   getRate(d = this.energyData) {
     if (this.config.entities?.cost?.rate && d?.__rate > 0) return d.__rate;
     return this.config.electricityRate || 0;
@@ -986,7 +986,10 @@ class EnergyDashboard {
     if (end <= this._dynamicRateStart) return null;
 
     const fetchStart = start < this._dynamicRateStart ? this._dynamicRateStart : start;
-    const history = await this.getHistory(rateEntity, fetchStart, end);
+    const [history, rateScale] = await Promise.all([
+      this.getHistory(rateEntity, fetchStart, end),
+      this.priceScale(rateEntity),  // Sensor in ct/kWh → EUR/kWh
+    ]);
     if (!history.length) return null;
 
     // State-Änderungen in sortierte Liste umwandeln
@@ -994,7 +997,7 @@ class EnergyDashboard {
     for (const s of history) {
       const ts = s.lu ? s.lu * 1000 : new Date(s.last_changed || s.last_updated).getTime();
       const val = parseFloat(s.s ?? s.state);
-      changes.push({ ts, rate: isNaN(val) ? null : val });
+      changes.push({ ts, rate: isNaN(val) ? null : val * rateScale });
     }
     changes.sort((a, b) => a.ts - b.ts);
 
@@ -2057,10 +2060,10 @@ class EnergyDashboard {
   }
 
   // ── Tarife ───────────────────────────────────────────────────
-  // Jeder Tarif ist eine Zahl in den Einstellungen (config.tariffs). Ist unter
-  // „Tarife aus HA-Entitäten“ eine input_number eingetragen (config.tariffEntities),
-  // gilt live deren Wert; Änderungen im Formular werden dann dorthin geschrieben,
-  // sodass z. B. Kostensensoren in HA dieselben Preise nutzen.
+  // Feste Preise aus den Einstellungen (config.tariffs). Für dynamische Preise
+  // gibt es je ein optionales Sensor-Feld: Strom (rateEntity), Einspeisung
+  // (feedInEntity) und Gas (gasRateEntity); deren aktueller Wert ersetzt den
+  // festen Preis. Dieselben Werte nutzen die Kostensensoren der Integration.
   _tariffKeys = [
     'strom_arbeitspreis', 'strom_grundpreis',                     // ct/kWh, €/Monat
     'pv_anlagenleistung', 'einspeisung_leistungsgrenze',          // kWp
@@ -2081,17 +2084,37 @@ class EnergyDashboard {
     };
   }
 
+  // Faktor auf EUR je Einheit: Sensoren in ct/kWh liefern Cent
+  async priceScale(entityId) {
+    try {
+      const data = await this.fetchAPI(`/api/states/${entityId}`);
+      return String(data?.attributes?.unit_of_measurement || '').toLowerCase().includes('ct') ? 0.01 : 1;
+    } catch (e) {
+      return 1;
+    }
+  }
+
+  // Aktueller Preis eines dynamischen Sensors in EUR je Einheit, sonst null
+  async dynamicPriceEur(entityId) {
+    if (!entityId) return null;
+    const [value, scale] = await Promise.all([this.getState(entityId), this.priceScale(entityId)]);
+    return value > 0 ? value * scale : null;
+  }
+
   async loadTarife() {
     const stored = this.config.tariffs || this._legacyTariffs();
-    const ents = this.config.tariffEntities || {};
-    const ids = this._tariffKeys.map(k => ents[k]).filter(Boolean);
-    const live = ids.length ? await this.getStates(ids) : {};
     const t = {};
-    for (const k of this._tariffKeys) {
-      t[k] = ents[k] ? (live[ents[k]] || 0) : (Number(stored[k]) || 0);
-    }
+    for (const k of this._tariffKeys) t[k] = Number(stored[k]) || 0;
     this._tariffs = t;
     this.applyTariffs(t);
+
+    // Dynamische Preise ersetzen die festen (Strom: siehe loadSettings/rateEntity)
+    const [feedIn, gas] = await Promise.all([
+      this.dynamicPriceEur(this.config.feedInEntity),
+      this.dynamicPriceEur(this.config.gasRateEntity),
+    ]);
+    if (feedIn != null) this.config.feedInRate = feedIn;
+    if (gas != null) t.gas_arbeitspreis = gas * 100;  // Gas-Tab rechnet in ct/kWh
   }
 
   // Strompreis, Grundgebühr und Einspeisevergütung für Kennzahlen und Kostenseite
@@ -2107,44 +2130,20 @@ class EnergyDashboard {
   }
 
   populateTarifFields() {
-    const t = this._tariffs || {};
-    const ents = this.config.tariffEntities || {};
+    const stored = this.config.tariffs || this._legacyTariffs();
     for (const el of document.querySelectorAll('[data-tarif]')) {
-      const v = t[el.dataset.tarif];
-      el.value = v ?? '';
-      el.dataset.loaded = String(v ?? '');
-    }
-    for (const el of document.querySelectorAll('[data-tarif-entity]')) {
-      el.value = ents[el.dataset.tarifEntity] || '';
+      el.value = stored[el.dataset.tarif] ?? '';
     }
   }
 
-  // Liest das Formular, schreibt geänderte Werte verknüpfter input_number nach HA
-  // und liefert { tariffs, tariffEntities } für die Einstellungen.
-  async saveTarifFields() {
+  // Liest die festen Preise aus dem Formular
+  readTarifFields() {
     const tariffs = { ...(this.config.tariffs || this._legacyTariffs()) };
-    const tariffEntities = {};
-    for (const el of document.querySelectorAll('[data-tarif-entity]')) {
-      const v = el.value.trim();
-      if (v) tariffEntities[el.dataset.tarifEntity] = v;
-    }
     for (const el of document.querySelectorAll('[data-tarif]')) {
-      const key = el.dataset.tarif;
       const v = parseFloat(el.value);
-      if (isNaN(v)) continue;
-      tariffs[key] = v;
-      const changed = !(String(v) === el.dataset.loaded || v === parseFloat(el.dataset.loaded));
-      if (tariffEntities[key] && changed) {
-        await this.fetchAPI('/api/services/input_number/set_value', {
-          method: 'POST',
-          body: JSON.stringify({ entity_id: tariffEntities[key], value: v }),
-        });
-      }
-      el.dataset.loaded = String(v);
+      if (!isNaN(v)) tariffs[el.dataset.tarif] = v;
     }
-    this.config.tariffs = tariffs;
-    this.config.tariffEntities = tariffEntities;
-    return { tariffs, tariffEntities };
+    return tariffs;
   }
 
   updateInvoiceTab() {
@@ -2894,9 +2893,12 @@ class EnergyDashboard {
       if (s.entities?.water) this.config.entities.water = { ...(this.config.entities.water || {}), ...s.entities.water };
       if (Object.prototype.hasOwnProperty.call(s.entities || {}, 'forecast')) this.config.entities.forecast = s.entities.forecast;
       if (Object.prototype.hasOwnProperty.call(s, 'statsValidFrom')) this.config.statsValidFrom = s.statsValidFrom;
-      // Tarife (Zahlen) und optional verknüpfte input_number
+      // Feste Preise (Tarife)
       if (s.tariffs && typeof s.tariffs === 'object') this.config.tariffs = s.tariffs;
-      if (s.tariffEntities && typeof s.tariffEntities === 'object') this.config.tariffEntities = s.tariffEntities;
+      // Dynamische Preis-Sensoren für Einspeisung und Gas (Strom: rateEntity weiter unten)
+      for (const key of ['feedInEntity', 'gasRateEntity']) {
+        if (Object.prototype.hasOwnProperty.call(s, key)) this.config[key] = s[key] || '';
+      }
 
       // Numbers
       if (typeof s.refLimit === 'number' && s.refLimit > 0) this.config.refLimit = s.refLimit;
@@ -2910,7 +2912,7 @@ class EnergyDashboard {
         this.config.ui.refreshInterval = s.ui.refreshInterval;
       }
       // Darstellung: Logo-Farbe, Untertitel, erster Reiter, Reihenfolge der Kacheln
-      for (const key of ['logoColor', 'logoSubtitle', 'mainTabLabel', 'statOrder']) {
+      for (const key of ['logoColor', 'logoSubtitle', 'statOrder']) {
         if (typeof s.ui?.[key] === 'string') {
           if (!this.config.ui) this.config.ui = {};
           this.config.ui[key] = s.ui[key];
@@ -2932,8 +2934,8 @@ class EnergyDashboard {
         this.config.rateEntity = s.rateEntity || '';
       }
       if (this.config.rateEntity) {
-        const entityRate = await this.getState(this.config.rateEntity);
-        if (entityRate > 0) this.config.electricityRate = entityRate;
+        const entityRate = await this.dynamicPriceEur(this.config.rateEntity);  // ct/kWh → EUR
+        if (entityRate != null) this.config.electricityRate = entityRate;
       }
     } catch (e) {
       console.warn('Settings load failed, using config.js defaults:', e.message);
@@ -3012,9 +3014,10 @@ class EnergyDashboard {
     // Darstellung
     setVal('set-logo-color', this.config.ui?.logoColor);
     setVal('set-logo-subtitle', this.config.ui?.logoSubtitle);
-    setVal('set-main-tab-label', this.config.ui?.mainTabLabel);
-    setVal('set-stat-order', this.config.ui?.statOrder);
+    this.populateStatOrderList();
     setVal('set-rate-entity-dyn', this.config.rateEntity || '');
+    setVal('set-feed-in-entity', this.config.feedInEntity || '');
+    setVal('set-gas-rate-entity', this.config.gasRateEntity || '');
 
     // Rate mode
     const hasEntity = this.config.rateEntity && this.config.rateEntity !== '';
@@ -3061,8 +3064,9 @@ class EnergyDashboard {
     this.applyUiSettings();
   }
 
-  // Darstellung aus den Einstellungen: Logo-Farbe, Untertitel, Name des ersten
-  // Reiters, Reihenfolge der Kacheln (data-stat). Leere Werte = Standard.
+  // Darstellung aus den Einstellungen: Logo-Farbe, Untertitel, Reihenfolge der
+  // Kacheln (data-stat). Leere Werte = Standard. Der erste Reiter heißt „Strom“,
+  // sobald Gas oder Wasser angezeigt wird, sonst „Dashboard“.
   applyUiSettings() {
     const ui = this.config.ui || {};
     const logo = document.querySelector('.energy-logo');
@@ -3074,20 +3078,75 @@ class EnergyDashboard {
       sub.style.display = text ? '' : 'none';
     }
     const mainLabel = document.getElementById('nav-main-label');
-    if (mainLabel) mainLabel.textContent = ui.mainTabLabel || 'Dashboard';
+    if (mainLabel) mainLabel.textContent = (this.isGasEnabled() || this.isWaterEnabled()) ? 'Strom' : 'Dashboard';
 
     const grid = document.getElementById('stats-grid');
     if (grid) {
-      if (!this._defaultStatOrder) {
-        this._defaultStatOrder = [...grid.querySelectorAll('[data-stat]')].map(el => el.dataset.stat);
-      }
-      const wanted = (ui.statOrder || '').split(',').map(s => s.trim()).filter(Boolean);
-      const order = [...wanted, ...this._defaultStatOrder.filter(k => !wanted.includes(k))];
-      for (const key of order) {
+      for (const key of this.getStatOrder()) {
         const el = grid.querySelector(`[data-stat="${key}"]`);
         if (el) grid.appendChild(el);
       }
     }
+  }
+
+  // Reihenfolge der Kacheln als Liste von data-stat-Schlüsseln. config.ui.statOrder
+  // ist kommagetrennt und darf Schlüssel oder angezeigte Namen enthalten
+  // (z. B. „Erzeugung, Einspeisung“); nicht genannte folgen in Standardreihenfolge.
+  getStatOrder() {
+    const grid = document.getElementById('stats-grid');
+    if (!grid) return [];
+    if (!this._defaultStatOrder) {
+      this._defaultStatOrder = [...grid.querySelectorAll('[data-stat]')].map(el => el.dataset.stat);
+    }
+    const byName = {};
+    for (const el of grid.querySelectorAll('[data-stat]')) {
+      byName[el.dataset.stat.toLowerCase()] = el.dataset.stat;
+      const label = el.querySelector('.stat-label')?.textContent.trim().toLowerCase();
+      if (label) byName[label] = el.dataset.stat;
+    }
+    const wanted = (this.config.ui?.statOrder || '').split(',')
+      .map(s => byName[s.trim().toLowerCase()]).filter(Boolean);
+    return [...new Set([...wanted, ...this._defaultStatOrder])];
+  }
+
+  // Liste mit ▲/▼ in den Einstellungen (Anzeige → Reihenfolge der Kacheln)
+  populateStatOrderList() {
+    const list = document.getElementById('set-stat-order');
+    const grid = document.getElementById('stats-grid');
+    if (!list || !grid) return;
+    const label = (key) => {
+      const text = grid.querySelector(`[data-stat="${key}"] .stat-label`)?.textContent.trim() || key;
+      return text.charAt(0) + text.slice(1).toLowerCase();  // „ERZEUGUNG“ → „Erzeugung“
+    };
+    list.innerHTML = '';
+    for (const key of this.getStatOrder()) {
+      if (key === 'heatpump' && !(this.config.heatpumpEnabled ?? true)) continue;  // ausgeblendet
+      const li = document.createElement('li');
+      li.dataset.stat = key;
+      li.innerHTML = `<span>${label(key)}</span>` +
+        '<button type="button" data-move="-1" aria-label="nach oben">▲</button>' +
+        '<button type="button" data-move="1" aria-label="nach unten">▼</button>';
+      list.appendChild(li);
+    }
+    const refresh = () => {
+      const items = [...list.children];
+      items.forEach((li, i) => {
+        li.querySelector('[data-move="-1"]').disabled = i === 0;
+        li.querySelector('[data-move="1"]').disabled = i === items.length - 1;
+      });
+    };
+    if (!list._wired) {
+      list.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-move]');
+        if (!btn) return;
+        const li = btn.closest('li');
+        if (btn.dataset.move === '-1' && li.previousElementSibling) list.insertBefore(li, li.previousElementSibling);
+        if (btn.dataset.move === '1' && li.nextElementSibling) list.insertBefore(li.nextElementSibling, li);
+        refresh();
+      });
+      list._wired = true;
+    }
+    refresh();
   }
 
   async saveSettings() {
@@ -3138,10 +3197,11 @@ class EnergyDashboard {
       const gasEnabled = document.getElementById('set-gas-enabled')?.checked ?? true;
       const waterEnabled = document.getElementById('set-water-enabled')?.checked ?? true;
 
-      // Tarife: verknüpfte input_number in HA schreiben, Zahlen in die Einstellungen.
-      // Strompreis, Grundgebühr und Einspeisevergütung daraus ableiten und
-      // zusätzlich in den bisherigen Feldern speichern (Rückfall für ältere Versionen).
-      const { tariffs, tariffEntities } = await this.saveTarifFields();
+      // Feste Preise aus dem Formular. Strompreis, Grundgebühr und Einspeisevergütung
+      // daraus ableiten und zusätzlich in den bisherigen Feldern speichern
+      // (Rückfall für ältere Versionen).
+      const tariffs = this.readTarifFields();
+      this.config.tariffs = tariffs;
       this.applyTariffs({ ...Object.fromEntries(this._tariffKeys.map(k => [k, 0])), ...tariffs });
 
       await this.fetchAPI(this._settingsUrl, {
@@ -3163,7 +3223,8 @@ class EnergyDashboard {
           baseFee: this.config.baseFee,
           rateEntity: getVal('set-rate-entity-dyn'),
           tariffs,
-          tariffEntities,
+          feedInEntity: getVal('set-feed-in-entity'),
+          gasRateEntity: getVal('set-gas-rate-entity'),
           statsValidFrom: getVal('set-stats-valid-from'),
           heatpumpEnabled,
           gasEnabled,
@@ -3172,8 +3233,7 @@ class EnergyDashboard {
             refreshInterval: (parseFloat(getVal('set-refresh-interval')) || 30) * 1000,
             logoColor: getVal('set-logo-color'),
             logoSubtitle: getVal('set-logo-subtitle'),
-            mainTabLabel: getVal('set-main-tab-label'),
-            statOrder: getVal('set-stat-order'),
+            statOrder: [...document.querySelectorAll('#set-stat-order li')].map(li => li.dataset.stat).join(', '),
           },
         }),
       });

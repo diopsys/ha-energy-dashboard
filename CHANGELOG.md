@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.6.0] - 2026-10-18
+
+### Added
+- **Kostensensoren der Integration** (Plattform `sensor`, angelegt sobald der jeweilige Zähler eingetragen ist):
+  `sensor.stromkosten_gesamt`, `sensor.gaskosten_gesamt`, `sensor.wasserkosten_gesamt` (EUR, fortlaufend:
+  Verbrauch × Arbeitspreis + zeitanteiliger Grundpreis, auch über HA-Ausfälle), `sensor.einspeisevergutung`
+  (EUR/kWh, EEG-Mischpreis) und `sensor.gasverbrauch_gesamt` (kWh = m³ × Brennwert × Zustandszahl) – direkt
+  nutzbar im HA-Energie-Dashboard. Preise aus den Tarifen; nach dem Speichern der Einstellungen sofort aktiv.
+  Ohne gespeicherten Zustand zählt ein Sensor beim letzten Stand seiner Statistik weiter, so lassen sich
+  eigene Template-Kostensensoren mit derselben Entitäts-ID ohne Bruch ablösen.
+- **Dynamische Preise** für Einspeisung und Gas (neben Strom), Einheit EUR/kWh oder ct/kWh wird erkannt.
+- Einstellungen: Rubrik **Sonstiges** (Referenz-Limit, Außentemperatur, PV-Prognose, Statistik gültig ab),
+  optionale Felder eingeklappt unter **Erweitert**, Reihenfolge der Kacheln als Liste mit ▲/▼.
+
+### Changed
+- **Tarife ohne `input_number`-Verknüpfung**: feste Preise in den Einstellungen, Sensoren nur noch für
+  dynamische Preise. In 1.5.0 verknüpfte Werte stehen bereits in den Einstellungen und gelten weiter.
+- Erster Reiter heißt „Strom“, sobald Gas oder Wasser angezeigt wird (Einstellung „Name erster Reiter“ entfällt).
+- Entitätsfelder in den Einstellungen nutzen die volle Breite.
+
+### Hinweis
+- Wegen der neuen Sensor-Plattform braucht dieses Update einen **HA-Neustart**.
+
+---
+
 ## [1.5.0] - 2026-10-18
 
 ### Added
