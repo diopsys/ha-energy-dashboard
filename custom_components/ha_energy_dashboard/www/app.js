@@ -668,12 +668,14 @@ class EnergyDashboard {
       const spanDays = (end - start) / 86400000;
       const statPeriod = spanDays > 180 ? 'month' : spanDays > 7 ? 'day' : 'hour';
 
-      const [elecStats, thermalStats, heaterStats, heatingStats, dhwStats] = await Promise.all([
+      const [elecStats, thermalStats, heaterStats, heatingStats, dhwStats, heatingScale, dhwScale] = await Promise.all([
         this.getStatistics(wp.electricTotal, start, end, statPeriod),
         this.getStatistics(wp.thermalTotal, start, end, statPeriod),
         this.getStatistics(wp.heaterTotal, start, end, statPeriod),
         this.getStatistics(wp.heatingTotal, start, end, statPeriod),
         this.getStatistics(wp.dhwTotal, start, end, statPeriod),
+        this.getUnitScale(wp.heatingTotal),
+        this.getUnitScale(wp.dhwTotal),
       ]);
 
       const sum = (stats) => stats.reduce((acc, s) => acc + Math.max(0, s.change ?? 0), 0);
@@ -681,8 +683,8 @@ class EnergyDashboard {
         electric: sum(elecStats),
         thermal:  sum(thermalStats),
         heater:   sum(heaterStats),
-        heating:  sum(heatingStats) / 1000,  // Sensor in Wh → kWh
-        dhw:      sum(dhwStats) / 1000,      // Sensor in Wh → kWh
+        heating:  sum(heatingStats) * heatingScale,
+        dhw:      sum(dhwStats) * dhwScale,
       };
     }
 
@@ -1677,12 +1679,14 @@ class EnergyDashboard {
     const chartPeriod = this.getChartAggregation(this.currentPeriod);
     const wp = this._wpEntities;
 
-    const [heatingStats, dhwStats] = await Promise.all([
+    const [heatingStats, dhwStats, heatingScale, dhwScale] = await Promise.all([
       this.getStatistics(wp.heatingTotal, start, end, chartPeriod),
       this.getStatistics(wp.dhwTotal, start, end, chartPeriod),
+      this.getUnitScale(wp.heatingTotal),
+      this.getUnitScale(wp.dhwTotal),
     ]);
-    const heatingData = this.statsToChartData(heatingStats).map(d => ({ ...d, y: d.y / 1000 }));  // Wh → kWh
-    const dhwData = this.statsToChartData(dhwStats).map(d => ({ ...d, y: d.y / 1000 }));           // Wh → kWh
+    const heatingData = this.statsToChartData(heatingStats, heatingScale);
+    const dhwData = this.statsToChartData(dhwStats, dhwScale);
 
     const timeUnitMap = { hour: 'hour', day: 'day', month: 'month' };
     const timeUnit = timeUnitMap[chartPeriod] || 'day';

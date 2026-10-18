@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.5.1] - 2026-10-18
+
+### Fixed
+- **Bug:** Wärmepumpe-Tab zeigte bei Gestern/Woche/Monat/Jahr für "Heizen"/"Warmwasser" (Aufschlüsselung
+  und Diagramm) nur ~0,00x kWh statt realistischer Werte — ein fest einprogrammiertes `/1000` ("Sensor in
+  Wh → kWh") ging von Wh-Sensoren aus, die zugrunde liegenden Sensoren melden aber bereits in kWh. Nutzt
+  jetzt wie alle anderen Energiewerte `getUnitScale()` zur automatischen Erkennung statt einer festen Annahme.
+  Elektrisch/Thermisch/Heizstab oben waren davon nicht betroffen (hatten die Division nie).
+
+---
+
 ## [1.5.0] - 2026-10-18
 
 ### Added
