@@ -7,7 +7,12 @@
   und Diagramm) nur ~0,00x kWh statt realistischer Werte — ein fest einprogrammiertes `/1000` ("Sensor in
   Wh → kWh") ging von Wh-Sensoren aus, die zugrunde liegenden Sensoren melden aber bereits in kWh. Nutzt
   jetzt wie alle anderen Energiewerte `getUnitScale()` zur automatischen Erkennung statt einer festen Annahme.
-  Elektrisch/Thermisch/Heizstab oben waren davon nicht betroffen (hatten die Division nie).
+  Elektrisch/Thermisch oben waren von diesem speziellen Bug nicht betroffen (hatten die Division nie).
+- **Bug:** Heizstab-Kachel zeigte bei Gestern/Woche/Monat/Jahr immer 0,00 kWh — die hinterlegten Sensoren
+  (`sensor.warmepumpe_heizstab_gesamtverbrauch`/`_verbrauch_taglich`) existieren nicht mehr (404), sie wurden
+  durch `sensor.wp_heizstab_energie_gesamt`/`_taglich` ersetzt. `_wpEntities` auf die neuen IDs umgestellt;
+  die Zeitraum-Berechnung nutzt jetzt `counterRange()` (Differenz der Zählerstände) statt `change`-Summe,
+  robust gegen Statistik-Sprünge.
 
 ---
 

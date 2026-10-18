@@ -39,8 +39,8 @@ class EnergyDashboard {
     dhwTotal:         'sensor.warmepumpe_elektrische_energie_dhw_gesamt',
     thermalDaily:     'sensor.warmepumpe_thermische_energie_taglich',
     thermalTotal:     'sensor.warmepumpe_thermische_energie_gesamt',
-    heaterDaily:      'sensor.warmepumpe_heizstab_verbrauch_taglich',
-    heaterTotal:      'sensor.warmepumpe_heizstab_gesamtverbrauch',
+    heaterDaily:      'sensor.wp_heizstab_energie_taglich',
+    heaterTotal:      'sensor.wp_heizstab_energie_gesamt',
   };
 
   // ── Auth ──────────────────────────────────────────────────────
@@ -668,10 +668,10 @@ class EnergyDashboard {
       const spanDays = (end - start) / 86400000;
       const statPeriod = spanDays > 180 ? 'month' : spanDays > 7 ? 'day' : 'hour';
 
-      const [elecStats, thermalStats, heaterStats, heatingStats, dhwStats, heatingScale, dhwScale] = await Promise.all([
+      const [elecStats, thermalStats, heaterTotal, heatingStats, dhwStats, heatingScale, dhwScale] = await Promise.all([
         this.getStatistics(wp.electricTotal, start, end, statPeriod),
         this.getStatistics(wp.thermalTotal, start, end, statPeriod),
-        this.getStatistics(wp.heaterTotal, start, end, statPeriod),
+        this.counterRange(wp.heaterTotal, start, end),  // Differenz der Zählerstände statt change-Summe — robust gegen Statistik-Sprünge
         this.getStatistics(wp.heatingTotal, start, end, statPeriod),
         this.getStatistics(wp.dhwTotal, start, end, statPeriod),
         this.getUnitScale(wp.heatingTotal),
@@ -682,7 +682,7 @@ class EnergyDashboard {
       this.heatpumpData = {
         electric: sum(elecStats),
         thermal:  sum(thermalStats),
-        heater:   sum(heaterStats),
+        heater:   heaterTotal || 0,
         heating:  sum(heatingStats) * heatingScale,
         dhw:      sum(dhwStats) * dhwScale,
       };
