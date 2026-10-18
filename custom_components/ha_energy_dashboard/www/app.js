@@ -2346,6 +2346,7 @@ class EnergyDashboard {
     const endMs = lastRateTs > end.getTime() ? endOfDay.getTime() : end.getTime();
 
     const nowMs = Date.now();
+    const nowLabel = this.t('Jetzt');  // vor dem Plugin aufgelöst — afterDraw läuft mit this = Plugin-Objekt, nicht die Dashboard-Instanz
     const nowLinePlugin = {
       id: 'nowLine',
       afterDraw(chart) {
@@ -2367,7 +2368,7 @@ class EnergyDashboard {
         ctx.font = '10px sans-serif';
         ctx.fillStyle = 'rgba(255,255,255,0.6)';
         ctx.textAlign = 'center';
-        ctx.fillText(this.t('Jetzt'), x, top - 4);
+        ctx.fillText(nowLabel, x, top - 4);
         ctx.restore();
       },
     };

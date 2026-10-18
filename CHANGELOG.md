@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.1] - 2026-10-18
+
+### Fixed
+- **Bug:** Preis-Diagramm auf der Kosten-Seite blieb leer bzw. brach beim Zeichnen ab
+  (`TypeError: this.t is not a function`). Das `nowLine`-Chart.js-Plugin definierte
+  `afterDraw(chart) {...}` als Objekt-Methode — Chart.js ruft das mit `this` = Plugin-Objekt auf,
+  nicht die Dashboard-Instanz, wodurch die neue `this.t()`-Übersetzungsfunktion (aus 1.6.0) fehlte.
+  Der übersetzte Text wird jetzt vor der Plugin-Definition aufgelöst, nicht mehr zur Zeichenzeit.
+
 ## [1.6.0] - 2026-10-18
 
 ### Added

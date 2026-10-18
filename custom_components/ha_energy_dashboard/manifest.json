@@ -1,7 +1,7 @@
 {
   "domain": "ha_energy_dashboard",
   "name": "HA Energy Dashboard",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "documentation": "https://github.com/gorbi87/ha-energy-dashboard",
   "requirements": [],
   "dependencies": [],
