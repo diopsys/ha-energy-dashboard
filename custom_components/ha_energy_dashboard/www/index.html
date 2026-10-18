@@ -7,7 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <link rel="stylesheet" href="styles.css?v=40">
+    <link rel="stylesheet" href="styles.css?v=46">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
@@ -744,6 +744,8 @@
                             <div class="autocomplete-list"></div>
                         </div>
                     </div>
+                    <details class="settings-advanced">
+                        <summary>Erweitert: Batterie</summary>
                     <div class="settings-field">
                         <label>Batterie laden<span class="settings-hint">Aktuelle Ladeleistung der Batterie in Watt</span></label>
                         <div class="autocomplete-wrap">
@@ -758,6 +760,7 @@
                             <div class="autocomplete-list"></div>
                         </div>
                     </div>
+                    </details>
                 </div>
 
                 <!-- Kumulative Sensoren -->
@@ -767,14 +770,6 @@
                         <label>Verbrauch kWh<span class="settings-hint">Zaehlerstand Gesamtverbrauch (steigend, state_class total)</span></label>
                         <div class="autocomplete-wrap">
                             <input type="text" class="settings-input entity-search" id="set-cum-consumption" placeholder="sensor.xxx_consumption_kwh" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <!-- direkt messender Verbrauchszähler für Stunden und kürzer -->
-                    <div class="settings-field">
-                        <label>Verbrauch fein kWh<span class="settings-hint">Optional: direkt messender Zaehler fuer Balken bis 1 h; bei Luecken gilt der Eintrag darueber</span></label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" id="set-cum-consumption-detail" placeholder="sensor.pv_load_summary" autocomplete="off">
                             <div class="autocomplete-list"></div>
                         </div>
                     </div>
@@ -799,7 +794,8 @@
                             <div class="autocomplete-list"></div>
                         </div>
                     </div>
-                    <!-- Batterie-Gesamtzähler -->
+                    <details class="settings-advanced">
+                        <summary>Erweitert: Batterie und Verbrauch fein</summary>
                     <div class="settings-field">
                         <label>Batterie geladen kWh<span class="settings-hint">Zaehlerstand Gesamt-Ladung</span></label>
                         <div class="autocomplete-wrap">
@@ -821,11 +817,245 @@
                             <div class="autocomplete-list"></div>
                         </div>
                     </div>
+                    <div class="settings-field">
+                        <label>Verbrauch fein kWh<span class="settings-hint">Optional: direkt messender Zaehler fuer Balken bis 1 h; bei Luecken gilt der Eintrag darueber</span></label>
+                        <div class="autocomplete-wrap">
+                            <input type="text" class="settings-input entity-search" id="set-cum-consumption-detail" placeholder="sensor.pv_load_summary" autocomplete="off">
+                            <div class="autocomplete-list"></div>
+                        </div>
+                    </div>
+                    </details>
                 </div>
 
-                <!-- Energie-Aggregate -->
+                <!-- Tarife: feste Preise, optional dynamische Preis-Sensoren -->
                 <div class="settings-section">
-                    <h3 class="settings-section-title">Energie-Aggregate (kWh) — Tag / Woche / Monat / Jahr</h3>
+                    <h3 class="settings-section-title">Tarife</h3>
+                    <p class="settings-hint tarif-hint">Feste Preise für Kennzahlen, Kostenseite, Gas und Wasser. Daraus legt die Integration auch die Kostensensoren in HA an (Stromkosten, Gaskosten, Wasserkosten gesamt, Einspeisevergütung) – z. B. für das HA-Energie-Dashboard. Die Sensor-Felder sind nur für dynamische Preise nötig.</p>
+
+                    <h4 class="tarif-group">Strom</h4>
+                    <div class="settings-field">
+                        <label>Arbeitspreis (ct/kWh)</label>
+                        <input type="number" class="settings-input settings-number" data-tarif="strom_arbeitspreis" min="0" max="100" step="0.01">
+                    </div>
+                    <div class="settings-field">
+                        <label>Grundpreis (€/Monat)</label>
+                        <input type="number" class="settings-input settings-number" data-tarif="strom_grundpreis" min="0" max="100" step="0.01">
+                    </div>
+
+                    <h4 class="tarif-group">Einspeisung</h4>
+                    <div class="settings-field">
+                        <label>Anlagenleistung (kWp)<span class="settings-hint">0 = nur Vergütung bis Schwelle</span></label>
+                        <input type="number" class="settings-input settings-number" data-tarif="pv_anlagenleistung" min="0" max="100" step="0.01">
+                    </div>
+                    <div class="settings-field">
+                        <label>Schwelle (kWp)<span class="settings-hint">Bis hier gilt der höhere Satz, darüber der niedrigere (EEG, anteilig nach Leistung)</span></label>
+                        <input type="number" class="settings-input settings-number" data-tarif="einspeisung_leistungsgrenze" min="0" max="100" step="0.01">
+                    </div>
+                    <div class="settings-field">
+                        <label>Vergütung bis Schwelle (ct/kWh)</label>
+                        <input type="number" class="settings-input settings-number" data-tarif="einspeisung_verguetung_bis_grenze" min="0" max="50" step="0.01">
+                    </div>
+                    <div class="settings-field">
+                        <label>Vergütung über Schwelle (ct/kWh)</label>
+                        <input type="number" class="settings-input settings-number" data-tarif="einspeisung_verguetung_ueber_grenze" min="0" max="50" step="0.01">
+                    </div>
+
+                    <h4 class="tarif-group">Gas</h4>
+                    <div class="settings-field">
+                        <label>Arbeitspreis (ct/kWh)</label>
+                        <input type="number" class="settings-input settings-number" data-tarif="gas_arbeitspreis" min="0" max="100" step="0.01">
+                    </div>
+                    <div class="settings-field">
+                        <label>Grundpreis (€/Monat)</label>
+                        <input type="number" class="settings-input settings-number" data-tarif="gas_grundpreis" min="0" max="100" step="0.01">
+                    </div>
+                    <div class="settings-field">
+                        <label>Brennwert (kWh/m³)<span class="settings-hint">Steht auf der Gasrechnung</span></label>
+                        <input type="number" class="settings-input settings-number" data-tarif="gas_brennwert" min="0" max="15" step="0.0001">
+                    </div>
+                    <div class="settings-field">
+                        <label>Zustandszahl<span class="settings-hint">Steht auf der Gasrechnung</span></label>
+                        <input type="number" class="settings-input settings-number" data-tarif="gas_zustandszahl" min="0" max="1.5" step="0.0001">
+                    </div>
+
+                    <h4 class="tarif-group">Wasser</h4>
+                    <div class="settings-field">
+                        <label>Frischwasser (€/m³)</label>
+                        <input type="number" class="settings-input settings-number" data-tarif="wasser_preis" min="0" max="20" step="0.001">
+                    </div>
+                    <div class="settings-field">
+                        <label>Grundpreis Wasser (€/Monat)</label>
+                        <input type="number" class="settings-input settings-number" data-tarif="wasser_grundpreis" min="0" max="100" step="0.01">
+                    </div>
+                    <div class="settings-field">
+                        <label>Abwasser (€/m³)<span class="settings-hint">Nach Frischwasser-m³</span></label>
+                        <input type="number" class="settings-input settings-number" data-tarif="abwasser_preis" min="0" max="20" step="0.001">
+                    </div>
+                    <div class="settings-field">
+                        <label>Grundpreis Abwasser (€/Monat)</label>
+                        <input type="number" class="settings-input settings-number" data-tarif="abwasser_grundpreis" min="0" max="100" step="0.01">
+                    </div>
+                    <details class="settings-advanced">
+                        <summary>Erweitert: dynamische Preise</summary>
+                    <div class="settings-field">
+                        <label>Dynamischer Strompreis (optional)<span class="settings-hint">Sensor in EUR/kWh oder ct/kWh (z.B. Tibber); ersetzt den Arbeitspreis oben</span></label>
+                        <div class="autocomplete-wrap">
+                            <input type="text" class="settings-input entity-search" id="set-rate-entity-dyn" placeholder="sensor.xxx_energy_price" autocomplete="off">
+                            <div class="autocomplete-list"></div>
+                        </div>
+                    </div>
+                    <div class="settings-field">
+                        <label>Dynamische Vergütung (optional)<span class="settings-hint">Sensor in EUR/kWh oder ct/kWh (z.B. Direktvermarktung); ersetzt die Vergütung oben</span></label>
+                        <div class="autocomplete-wrap">
+                            <input type="text" class="settings-input entity-search" id="set-feed-in-entity" placeholder="sensor.xxx_feed_in_price" autocomplete="off">
+                            <div class="autocomplete-list"></div>
+                        </div>
+                    </div>
+                    <div class="settings-field">
+                        <label>Dynamischer Gaspreis (optional)<span class="settings-hint">Sensor in EUR/kWh oder ct/kWh; ersetzt den Arbeitspreis oben</span></label>
+                        <div class="autocomplete-wrap">
+                            <input type="text" class="settings-input entity-search" id="set-gas-rate-entity" placeholder="sensor.xxx_gas_price" autocomplete="off">
+                            <div class="autocomplete-list"></div>
+                        </div>
+                    </div>
+                    </details>
+                </div>
+
+                <!-- Gas -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Gas</h3>
+                    <div class="settings-field">
+                        <label>Gas-Tab anzeigen<span class="settings-hint">Nur mit eingetragenem Zähler; ausgeschaltet auch nicht in den Kosten</span></label>
+                        <label class="settings-toggle">
+                            <input type="checkbox" id="set-gas-enabled" checked>
+                            <span class="settings-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="settings-field">
+                        <label>Gaszähler (m³)<span class="settings-hint">Zählerstand in m³ (steigend, mit Statistik); kWh über Brennwert × Zustandszahl</span></label>
+                        <div class="autocomplete-wrap">
+                            <input type="text" class="settings-input entity-search" id="set-gas-meter" placeholder="sensor.gaszaehler_value" autocomplete="off">
+                            <div class="autocomplete-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Wasser -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Wasser</h3>
+                    <div class="settings-field">
+                        <label>Wasser-Tab anzeigen<span class="settings-hint">Nur mit eingetragenem Zähler; ausgeschaltet auch nicht in den Kosten</span></label>
+                        <label class="settings-toggle">
+                            <input type="checkbox" id="set-water-enabled" checked>
+                            <span class="settings-toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="settings-field">
+                        <label>Wasserzähler (m³)<span class="settings-hint">Zählerstand in m³ (steigend, mit Statistik); Abwasser nach Frischwasser-m³</span></label>
+                        <div class="autocomplete-wrap">
+                            <input type="text" class="settings-input entity-search" id="set-water-meter" placeholder="sensor.wasserzaehler_value" autocomplete="off">
+                            <div class="autocomplete-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Wärmepumpe -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Wärmepumpe</h3>
+                    <div class="settings-field">
+                        <label>Wärmepumpe-Tab anzeigen<span class="settings-hint">Blendet Tab, Statistik-Karte und Flow-Knoten komplett aus</span></label>
+                        <label class="settings-toggle">
+                            <input type="checkbox" id="set-heatpump-enabled" checked>
+                            <span class="settings-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Sonstiges -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Sonstiges</h3>
+                    <div class="settings-field">
+                        <label>Referenz-Limit (kW)<span class="settings-hint">Netzbezug, ab dem eine Warnung erscheint</span></label>
+                        <input type="number" class="settings-input settings-number" id="set-ref-limit" min="0" max="50" step="0.5" value="5">
+                    </div>
+                    <div class="settings-field">
+                        <label>Außentemperatur (optional)<span class="settings-hint">Als Linie im Gas-Diagramm</span></label>
+                        <div class="autocomplete-wrap">
+                            <input type="text" class="settings-input entity-search" id="set-gas-outdoor" placeholder="sensor.xxx_outdoor_temperature" autocomplete="off">
+                            <div class="autocomplete-list"></div>
+                        </div>
+                    </div>
+                    <div class="settings-field">
+                        <label>PV-Prognose (optional)<span class="settings-hint">Sensor mit Attribut forecast (15-min-Werte: datetime, watts, p10, p90), z.B. Helios Forecast; Linie im Energieprofil bei Heute</span></label>
+                        <div class="autocomplete-wrap">
+                            <input type="text" class="settings-input entity-search" id="set-forecast-entity" placeholder="sensor.pv_forecast_power_now" autocomplete="off">
+                            <div class="autocomplete-list"></div>
+                        </div>
+                    </div>
+                    <details class="settings-advanced">
+                        <summary>Erweitert: Statistik</summary>
+                    <div class="settings-field">
+                        <label>Statistik gültig ab (optional)<span class="settings-hint">Frühere Zählerstände werden ignoriert, z.B. wenn die HA-Statistik anfangs stillstand oder sprang</span></label>
+                        <input type="datetime-local" class="settings-input" id="set-stats-valid-from">
+                    </div>
+                    </details>
+                    <div class="settings-field" style="display:none">
+                        <label>Strompreis<span class="settings-hint">Fester Preis oder HA-Sensor fuer dynamische Tarife (z.B. Octopus, Tibber)</span></label>
+                        <div class="rate-mode-wrap">
+                            <select class="settings-input settings-select" id="set-rate-mode">
+                                <option value="fixed">Fester Wert</option>
+                                <option value="entity">HA Entitaet</option>
+                            </select>
+                            <input type="number" class="settings-input settings-number" id="set-electricity-rate" min="0" max="1" step="0.01" value="0.30" placeholder="EUR/kWh">
+                            <div class="autocomplete-wrap rate-entity-wrap" style="display:none">
+                                <input type="text" class="settings-input entity-search" id="set-rate-entity" placeholder="sensor.xxx_energy_cost" autocomplete="off">
+                                <div class="autocomplete-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="settings-field" style="display:none">
+                        <label>Einspeiseverguetung (EUR/kWh)<span class="settings-hint">Verguetung pro eingespeister kWh</span></label>
+                        <input type="number" class="settings-input settings-number" id="set-feed-in-rate" min="0" max="1" step="0.01" value="0.08">
+                    </div>
+                    <div class="settings-field" style="display:none">
+                        <label>Grundgebuehr (EUR/Monat)<span class="settings-hint">Monatliche Grundgebuehr des Stromvertrags</span></label>
+                        <input type="number" class="settings-input settings-number" id="set-base-fee" min="0" max="100" step="0.01" value="0">
+                    </div>
+                </div>
+
+                <!-- Anzeige -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Anzeige</h3>
+                    <div class="settings-field">
+                        <label>Sprache<span class="settings-hint">Oberfläche und Namen der Kostensensoren in HA</span></label>
+                        <select class="settings-input settings-select" id="set-language">
+                            <option value="de">Deutsch</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+                    <div class="settings-field">
+                        <label>Aktualisierung (Sekunden)<span class="settings-hint">Wie oft die Live-Werte automatisch neu geladen werden</span></label>
+                        <input type="number" class="settings-input settings-number" id="set-refresh-interval" min="5" max="300" step="5" value="30">
+                    </div>
+                    <div class="settings-field">
+                        <label>Akzentfarbe<span class="settings-hint">CSS-Farbe für Logo und aktiven Reiter, leer = Standard (blau)</span></label>
+                        <input type="text" class="settings-input" id="set-logo-color" placeholder="#4a9eff">
+                    </div>
+                    <div class="settings-field">
+                        <label>Untertitel<span class="settings-hint">Text neben „Energy“; leer lassen für „Dashboard“, „-“ blendet ihn aus</span></label>
+                        <input type="text" class="settings-input" id="set-logo-subtitle" placeholder="Dashboard">
+                    </div>
+                    <div class="settings-field">
+                        <label>Kacheln<span class="settings-hint">Haken = anzeigen, ▲/▼ = Reihenfolge; gilt nach dem Speichern. Mit Wärmepumpe teilt sich die Verbrauchs-Kachel mit ihr.</span></label>
+                        <ul class="stat-order-list" id="set-stat-order"></ul>
+                    </div>
+                </div>
+
+                <!-- Energie-Aggregate (optional) -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">Energie-Aggregate (optional)</h3>
+                    <details class="settings-advanced">
+                        <summary>Erweitert: Sensoren je Zeitraum</summary>
                     <p class="settings-subtitle">Optional. Werden fuer die Statistik-Karten der aktuellen Zeitraeume (Heute, Diese Woche, ...) genutzt. Ohne Eintrag wird aus den kumulativen Sensoren berechnet.</p>
 
                     <div class="settings-subgroup">
@@ -887,11 +1117,14 @@
                             <div class="autocomplete-wrap"><label class="settings-period-label">Jahr</label><input type="text" class="settings-input entity-search" id="set-energy-battery-discharge-yearly" placeholder="sensor.xxx" autocomplete="off"><div class="autocomplete-list"></div></div>
                         </div>
                     </div>
+                    </details>
                 </div>
 
-                <!-- Kosten-Sensoren -->
+                <!-- Kosten-Sensoren (optional) -->
                 <div class="settings-section">
-                    <h3 class="settings-section-title">Kosten-Sensoren</h3>
+                    <h3 class="settings-section-title">Kosten-Sensoren (optional)</h3>
+                    <details class="settings-advanced">
+                        <summary>Erweitert: Kosten- und Preis-Sensoren</summary>
                     <p class="settings-subtitle">Optional. Absolute Kostensensoren (falls vorhanden) statt Berechnung aus Strompreis × Verbrauch.</p>
                     <div class="settings-field">
                         <label>Kosten Tag<span class="settings-hint">Absolute Stromkosten heute statt Berechnung aus Strompreis x Verbrauch</span></label>
@@ -935,314 +1168,7 @@
                             <div class="autocomplete-list"></div>
                         </div>
                     </div>
-                </div>
-
-                <!-- Referenz & Kosten -->
-                <div class="settings-section">
-                    <h3 class="settings-section-title">Referenz-Limit</h3>
-                    <div class="settings-field">
-                        <label>Referenz-Limit (kW)<span class="settings-hint">Netzbezug, ab dem eine Warnung erscheint</span></label>
-                        <input type="number" class="settings-input settings-number" id="set-ref-limit" min="0" max="50" step="0.5" value="5">
-                    </div>
-                    <!-- Alte feste Preisfelder: ausgeblendet, Werte kommen aus „Tarife“ -->
-                    <div class="settings-field" style="display:none">
-                        <label>Strompreis<span class="settings-hint">Fester Preis oder HA-Sensor fuer dynamische Tarife (z.B. Octopus, Tibber)</span></label>
-                        <div class="rate-mode-wrap">
-                            <select class="settings-input settings-select" id="set-rate-mode">
-                                <option value="fixed">Fester Wert</option>
-                                <option value="entity">HA Entitaet</option>
-                            </select>
-                            <input type="number" class="settings-input settings-number" id="set-electricity-rate" min="0" max="1" step="0.01" value="0.30" placeholder="EUR/kWh">
-                            <div class="autocomplete-wrap rate-entity-wrap" style="display:none">
-                                <input type="text" class="settings-input entity-search" id="set-rate-entity" placeholder="sensor.xxx_energy_cost" autocomplete="off">
-                                <div class="autocomplete-list"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="settings-field" style="display:none">
-                        <label>Einspeiseverguetung (EUR/kWh)<span class="settings-hint">Verguetung pro eingespeister kWh</span></label>
-                        <input type="number" class="settings-input settings-number" id="set-feed-in-rate" min="0" max="1" step="0.01" value="0.08">
-                    </div>
-                    <div class="settings-field" style="display:none">
-                        <label>Grundgebuehr (EUR/Monat)<span class="settings-hint">Monatliche Grundgebuehr des Stromvertrags</span></label>
-                        <input type="number" class="settings-input settings-number" id="set-base-fee" min="0" max="100" step="0.01" value="0">
-                    </div>
-                </div>
-
-                <!-- Tarife: Zahl in den Einstellungen oder optional live aus einer input_number -->
-                <div class="settings-section">
-                    <h3 class="settings-section-title">Tarife</h3>
-                    <p class="settings-hint tarif-hint">Gelten für Kennzahlen, Kostenseite, Gas und Wasser. Ist unten eine input_number verknüpft, wird der Wert dort gelesen und gespeichert (z. B. für Kostensensoren in HA).</p>
-
-                    <h4 class="tarif-group">Strom</h4>
-                    <div class="settings-field">
-                        <label>Arbeitspreis (ct/kWh)</label>
-                        <input type="number" class="settings-input settings-number" data-tarif="strom_arbeitspreis" min="0" max="100" step="0.01">
-                    </div>
-                    <div class="settings-field">
-                        <label>Grundpreis (€/Monat)</label>
-                        <input type="number" class="settings-input settings-number" data-tarif="strom_grundpreis" min="0" max="100" step="0.01">
-                    </div>
-                    <div class="settings-field">
-                        <label>Dynamischer Strompreis (optional)<span class="settings-hint">Sensor in EUR/kWh fuer dynamische Tarife (z.B. Tibber); ersetzt den Arbeitspreis</span></label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" id="set-rate-entity-dyn" placeholder="sensor.xxx_energy_price" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-
-                    <h4 class="tarif-group">Einspeisung</h4>
-                    <div class="settings-field">
-                        <label>Anlagenleistung (kWp)<span class="settings-hint">0 = nur Vergütung bis Schwelle</span></label>
-                        <input type="number" class="settings-input settings-number" data-tarif="pv_anlagenleistung" min="0" max="100" step="0.01">
-                    </div>
-                    <div class="settings-field">
-                        <label>Schwelle (kWp)<span class="settings-hint">Bis hier gilt der höhere Satz, darüber der niedrigere (EEG, anteilig nach Leistung)</span></label>
-                        <input type="number" class="settings-input settings-number" data-tarif="einspeisung_leistungsgrenze" min="0" max="100" step="0.01">
-                    </div>
-                    <div class="settings-field">
-                        <label>Vergütung bis Schwelle (ct/kWh)</label>
-                        <input type="number" class="settings-input settings-number" data-tarif="einspeisung_verguetung_bis_grenze" min="0" max="50" step="0.01">
-                    </div>
-                    <div class="settings-field">
-                        <label>Vergütung über Schwelle (ct/kWh)</label>
-                        <input type="number" class="settings-input settings-number" data-tarif="einspeisung_verguetung_ueber_grenze" min="0" max="50" step="0.01">
-                    </div>
-
-                    <h4 class="tarif-group">Gas</h4>
-                    <div class="settings-field">
-                        <label>Arbeitspreis (ct/kWh)</label>
-                        <input type="number" class="settings-input settings-number" data-tarif="gas_arbeitspreis" min="0" max="100" step="0.01">
-                    </div>
-                    <div class="settings-field">
-                        <label>Grundpreis (€/Monat)</label>
-                        <input type="number" class="settings-input settings-number" data-tarif="gas_grundpreis" min="0" max="100" step="0.01">
-                    </div>
-                    <div class="settings-field">
-                        <label>Brennwert (kWh/m³)<span class="settings-hint">Steht auf der Gasrechnung</span></label>
-                        <input type="number" class="settings-input settings-number" data-tarif="gas_brennwert" min="0" max="15" step="0.0001">
-                    </div>
-                    <div class="settings-field">
-                        <label>Zustandszahl<span class="settings-hint">Steht auf der Gasrechnung</span></label>
-                        <input type="number" class="settings-input settings-number" data-tarif="gas_zustandszahl" min="0" max="1.5" step="0.0001">
-                    </div>
-
-                    <h4 class="tarif-group">Wasser</h4>
-                    <div class="settings-field">
-                        <label>Frischwasser (€/m³)</label>
-                        <input type="number" class="settings-input settings-number" data-tarif="wasser_preis" min="0" max="20" step="0.001">
-                    </div>
-                    <div class="settings-field">
-                        <label>Grundpreis Wasser (€/Monat)</label>
-                        <input type="number" class="settings-input settings-number" data-tarif="wasser_grundpreis" min="0" max="100" step="0.01">
-                    </div>
-                    <div class="settings-field">
-                        <label>Abwasser (€/m³)<span class="settings-hint">Nach Frischwasser-m³</span></label>
-                        <input type="number" class="settings-input settings-number" data-tarif="abwasser_preis" min="0" max="20" step="0.001">
-                    </div>
-                    <div class="settings-field">
-                        <label>Grundpreis Abwasser (€/Monat)</label>
-                        <input type="number" class="settings-input settings-number" data-tarif="abwasser_grundpreis" min="0" max="100" step="0.01">
-                    </div>
-
-                    <h4 class="tarif-group">Tarife aus HA-Entitäten (optional)</h4>
-                    <p class="settings-hint tarif-hint">input_number je Tarif. Leer = Wert von oben aus den Einstellungen.</p>
-                    <div class="settings-field">
-                        <label>Strom Arbeitspreis</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="strom_arbeitspreis" placeholder="input_number.strom_arbeitspreis" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Strom Grundpreis</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="strom_grundpreis" placeholder="input_number.strom_grundpreis" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Anlagenleistung</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="pv_anlagenleistung" placeholder="input_number.pv_anlagenleistung" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Einspeisung Schwelle</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="einspeisung_leistungsgrenze" placeholder="input_number.einspeisung_leistungsgrenze" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Vergütung bis Schwelle</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="einspeisung_verguetung_bis_grenze" placeholder="input_number.einspeisung_verguetung_bis_grenze" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Vergütung über Schwelle</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="einspeisung_verguetung_ueber_grenze" placeholder="input_number.einspeisung_verguetung_ueber_grenze" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Gas Arbeitspreis</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="gas_arbeitspreis" placeholder="input_number.gas_arbeitspreis" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Gas Grundpreis</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="gas_grundpreis" placeholder="input_number.gas_grundpreis" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Gas Brennwert</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="gas_brennwert" placeholder="input_number.gas_brennwert" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Gas Zustandszahl</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="gas_zustandszahl" placeholder="input_number.gas_zustandszahl" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Frischwasser</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="wasser_preis" placeholder="input_number.wasser_preis" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Grundpreis Wasser</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="wasser_grundpreis" placeholder="input_number.wasser_grundpreis" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Abwasser</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="abwasser_preis" placeholder="input_number.abwasser_preis" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Grundpreis Abwasser</label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" data-tarif-entity="abwasser_grundpreis" placeholder="input_number.abwasser_grundpreis" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Anzeige -->
-                <div class="settings-section">
-                    <h3 class="settings-section-title">Anzeige</h3>
-                    <div class="settings-field">
-                        <label>Aktualisierung (Sekunden)<span class="settings-hint">Wie oft die Live-Werte automatisch neu geladen werden</span></label>
-                        <input type="number" class="settings-input settings-number" id="set-refresh-interval" min="5" max="300" step="5" value="30">
-                    </div>
-                    <div class="settings-field">
-                        <label>Logo-Farbe<span class="settings-hint">CSS-Farbe für Schriftzug und Logo, leer = Standard (blau)</span></label>
-                        <input type="text" class="settings-input" id="set-logo-color" placeholder="#4a9eff">
-                    </div>
-                    <div class="settings-field">
-                        <label>Untertitel<span class="settings-hint">Text neben „Energy“; leer lassen für „Dashboard“, „-“ blendet ihn aus</span></label>
-                        <input type="text" class="settings-input" id="set-logo-subtitle" placeholder="Dashboard">
-                    </div>
-                    <div class="settings-field">
-                        <label>Name erster Reiter<span class="settings-hint">z. B. „Strom“, wenn auch Gas und Wasser angezeigt werden</span></label>
-                        <input type="text" class="settings-input" id="set-main-tab-label" placeholder="Dashboard">
-                    </div>
-                    <div class="settings-field">
-                        <label>Reihenfolge der Kacheln<span class="settings-hint">Kommagetrennt aus consumption, production, imported, exported, self-consumed, heatpump; nicht genannte folgen in Standardreihenfolge</span></label>
-                        <input type="text" class="settings-input" id="set-stat-order" placeholder="consumption, production, imported, exported, self-consumed">
-                    </div>
-                </div>
-
-                <!-- Prognose & Statistik -->
-                <div class="settings-section">
-                    <h3 class="settings-section-title">Prognose &amp; Statistik</h3>
-                    <div class="settings-field">
-                        <label>PV-Prognose (optional)<span class="settings-hint">Sensor mit Attribut forecast (15-min-Werte: datetime, watts, p10, p90), z.B. Helios Forecast; Linie im Energieprofil bei Heute</span></label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" id="set-forecast-entity" placeholder="sensor.pv_forecast_power_now" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Statistik gültig ab (optional)<span class="settings-hint">Frühere Zählerstände werden ignoriert, z.B. wenn die HA-Statistik anfangs stillstand oder sprang</span></label>
-                        <input type="datetime-local" class="settings-input" id="set-stats-valid-from">
-                    </div>
-                </div>
-
-                <!-- Wärmepumpe -->
-                <div class="settings-section">
-                    <h3 class="settings-section-title">Wärmepumpe</h3>
-                    <div class="settings-field">
-                        <label>Wärmepumpe-Tab anzeigen<span class="settings-hint">Blendet Tab, Statistik-Karte und Flow-Knoten komplett aus</span></label>
-                        <label class="settings-toggle">
-                            <input type="checkbox" id="set-heatpump-enabled" checked>
-                            <span class="settings-toggle-slider"></span>
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Gas -->
-                <div class="settings-section">
-                    <h3 class="settings-section-title">Gas</h3>
-                    <div class="settings-field">
-                        <label>Gas-Tab anzeigen<span class="settings-hint">Nur mit eingetragenem Zähler; ausgeschaltet auch nicht in den Kosten</span></label>
-                        <label class="settings-toggle">
-                            <input type="checkbox" id="set-gas-enabled" checked>
-                            <span class="settings-toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div class="settings-field">
-                        <label>Gaszähler (m³)<span class="settings-hint">Zählerstand in m³ (steigend, mit Statistik); kWh über Brennwert × Zustandszahl</span></label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" id="set-gas-meter" placeholder="sensor.gaszaehler_value" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                    <div class="settings-field">
-                        <label>Außentemperatur (optional)<span class="settings-hint">Als Linie im Gas-Diagramm</span></label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" id="set-gas-outdoor" placeholder="sensor.xxx_outdoor_temperature" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Wasser -->
-                <div class="settings-section">
-                    <h3 class="settings-section-title">Wasser</h3>
-                    <div class="settings-field">
-                        <label>Wasser-Tab anzeigen<span class="settings-hint">Nur mit eingetragenem Zähler; ausgeschaltet auch nicht in den Kosten</span></label>
-                        <label class="settings-toggle">
-                            <input type="checkbox" id="set-water-enabled" checked>
-                            <span class="settings-toggle-slider"></span>
-                        </label>
-                    </div>
-                    <div class="settings-field">
-                        <label>Wasserzähler (m³)<span class="settings-hint">Zählerstand in m³ (steigend, mit Statistik); Abwasser nach Frischwasser-m³</span></label>
-                        <div class="autocomplete-wrap">
-                            <input type="text" class="settings-input entity-search" id="set-water-meter" placeholder="sensor.wasserzaehler_value" autocomplete="off">
-                            <div class="autocomplete-list"></div>
-                        </div>
-                    </div>
+                    </details>
                 </div>
 
                 <div class="settings-actions">
@@ -1252,6 +1178,7 @@
             </div>
         </div>
     </div>
-    <script src="app.js?v=52"></script>
+    <script src="i18n.js?v=4"></script>
+    <script src="app.js?v=61"></script>
 </body>
 </html>

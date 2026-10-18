@@ -1,11 +1,34 @@
 # Changelog
 
-## [1.5.1] - 2026-10-18
+## [1.6.0] - 2026-10-18
 
 ### Added
-- **Eigenes Icon/Logo** für HACS und die Integrationsliste in Home Assistant (`custom_components/ha_energy_dashboard/brand/`:
-  `icon.png`, `icon@2x.png`, `logo.png`, `logo@2x.png`). Funktioniert ab HA 2026.3 automatisch, kein externer
-  PR bei `home-assistant/brands` nötig (lokale Bilder haben seitdem Vorrang vor der Brands-CDN).
+- **Kostensensoren der Integration** (Plattform `sensor`, angelegt sobald der jeweilige Zähler eingetragen ist):
+  `sensor.stromkosten_gesamt`, `sensor.gaskosten_gesamt`, `sensor.wasserkosten_gesamt` (EUR, fortlaufend:
+  Verbrauch × Arbeitspreis + zeitanteiliger Grundpreis, auch über HA-Ausfälle), `sensor.einspeisevergutung`
+  (EUR/kWh, EEG-Mischpreis) und `sensor.gasverbrauch_gesamt` (kWh = m³ × Brennwert × Zustandszahl) – direkt
+  nutzbar im HA-Energie-Dashboard. Preise aus den Tarifen; nach dem Speichern der Einstellungen sofort aktiv.
+  Ohne gespeicherten Zustand zählt ein Sensor beim letzten Stand seiner Statistik weiter, so lassen sich
+  eigene Template-Kostensensoren mit derselben Entitäts-ID ohne Bruch ablösen.
+- **Dynamische Preise** für Einspeisung und Gas (neben Strom), Einheit EUR/kWh oder ct/kWh wird erkannt.
+- Einstellungen: Rubrik **Sonstiges** (Referenz-Limit, Außentemperatur, PV-Prognose, Statistik gültig ab),
+  optionale Felder eingeklappt unter **Erweitert**, Kacheln als Liste mit Haken (ein-/ausblenden) und ▲/▼.
+- **Sprachauswahl Deutsch/Englisch** (Anzeige → Sprache): Oberfläche, Diagramme, Kostenseite, Hinweistexte und
+  Namen der Kostensensoren. Übersetzungen in `www/i18n.js` (Schlüssel = Text im Quelltext). Deutsch mit
+  Dezimalkomma und numerischen Datumsachsen; bisher englische Texte („Sensors“, „Custom“, „Reset Zoom“,
+  „EXPORT/IMPORT“) sind auf Deutsch übersetzt, Texte ohne Umlaute („fuer“, „Zaehlerstand“) korrigiert.
+- **Verbrauch + Wärmepumpe in einer Kachel**: Mit aktivierter Wärmepumpe zeigt die Verbrauchs-Kachel „Gesamt“
+  und darunter „Wärme“ (abschaltbar über den Haken), statt einer eigenen Wärmepumpen-Kachel.
+- **Akzentfarbe** (früher „Logo-Farbe“) gilt für Logo und aktiven Reiter, wie bei anderen eigenen Panels.
+
+### Changed
+- **Tarife ohne `input_number`-Verknüpfung**: feste Preise in den Einstellungen, Sensoren nur noch für
+  dynamische Preise. In 1.5.0 verknüpfte Werte stehen bereits in den Einstellungen und gelten weiter.
+- Erster Reiter heißt „Strom“, sobald Gas oder Wasser angezeigt wird (Einstellung „Name erster Reiter“ entfällt).
+- Entitätsfelder in den Einstellungen nutzen die volle Breite.
+
+### Hinweis
+- Wegen der neuen Sensor-Plattform braucht dieses Update einen **HA-Neustart**.
 
 ### Fixed
 - **Bug:** Wärmepumpe-Tab zeigte bei Gestern/Woche/Monat/Jahr für "Heizen"/"Warmwasser" (Aufschlüsselung
@@ -18,6 +41,11 @@
   durch `sensor.wp_heizstab_energie_gesamt`/`_taglich` ersetzt. `_wpEntities` auf die neuen IDs umgestellt;
   die Zeitraum-Berechnung nutzt jetzt `counterRange()` (Differenz der Zählerstände) statt `change`-Summe,
   robust gegen Statistik-Sprünge.
+
+### Added
+- **Eigenes Icon/Logo** für HACS und die Integrationsliste in Home Assistant (`custom_components/ha_energy_dashboard/brand/`:
+  `icon.png`, `icon@2x.png`, `logo.png`, `logo@2x.png`). Funktioniert ab HA 2026.3 automatisch, kein externer
+  PR bei `home-assistant/brands` nötig (lokale Bilder haben seitdem Vorrang vor der Brands-CDN).
 
 ---
 

@@ -39,7 +39,7 @@ body {
 }
 .energy-logo {
   display: flex; align-items: center; gap: 0.75rem;
-  font-size: 1.25rem; font-weight: 700; color: var(--accent-blue);
+  font-size: 1.25rem; font-weight: 700; color: var(--nav-accent, var(--accent-blue));
 }
 .logo-subtitle { font-size: 0.75rem; color: var(--text-secondary); font-weight: 400; margin-left: 0.25rem; }
 .energy-nav { display: flex; gap: 0.25rem; flex: 1; justify-content: center; }
@@ -51,7 +51,7 @@ body {
   transition: background 0.2s, color 0.2s;
 }
 .nav-item:hover { background: var(--bg-card); color: var(--text-primary); }
-.nav-item.active { background: var(--bg-card); color: var(--accent-blue); }
+.nav-item.active { background: var(--bg-card); color: var(--nav-accent, var(--accent-blue)); }
 .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
 .header-right { flex: 0 0 auto; }
 
@@ -536,7 +536,8 @@ body {
 }
 .rate-mode-wrap .autocomplete-wrap { flex: 1; min-width: 180px; }
 .rate-mode-wrap .settings-number { flex: 0 0 120px; }
-.autocomplete-wrap { flex: 1; position: relative; }
+.autocomplete-wrap { flex: 1; position: relative; min-width: 0; }
+.autocomplete-wrap .settings-input { width: 100%; box-sizing: border-box; }
 .autocomplete-list {
   display: none; position: absolute; top: 100%; left: 0; right: 0;
   background: var(--bg-secondary); border: 1px solid var(--border-accent);
@@ -710,3 +711,53 @@ body {
   .rate-mode-wrap .settings-number { flex: none; max-width: 100%; }
   .settings-select { max-width: 100%; }
 }
+
+/* Reihenfolge der Kacheln: Liste mit ▲/▼ */
+.stat-order-list { flex: 1; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; max-width: 360px; }
+.stat-order-list li {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.5rem 0.35rem 0.75rem;
+  background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 6px;
+  font-size: 0.8rem; color: var(--text-primary);
+}
+.stat-order-list li span { flex: 1; }
+.stat-order-list button {
+  background: none; border: 1px solid var(--border-primary); color: var(--text-secondary);
+  border-radius: 4px; width: 1.8rem; height: 1.6rem; cursor: pointer; font-size: 0.7rem;
+}
+.stat-order-list button:hover:not(:disabled) { color: var(--text-primary); border-color: var(--accent-blue); }
+.stat-order-list button:disabled { opacity: 0.3; cursor: default; }
+
+/* Einklappbare Bereiche „Erweitert“ in den Einstellungen */
+.settings-advanced { margin-top: 0.75rem; border-top: 1px solid var(--border-primary); padding-top: 0.5rem; }
+.settings-advanced > summary {
+  cursor: pointer; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);
+  padding: 0.25rem 0; list-style: none; user-select: none;
+}
+.settings-advanced > summary::-webkit-details-marker { display: none; }
+.settings-advanced > summary::before { content: '▸'; display: inline-block; width: 1rem; transition: transform 0.15s; }
+.settings-advanced[open] > summary::before { transform: rotate(90deg); }
+.settings-advanced > summary:hover { color: var(--text-primary); }
+.settings-advanced[open] > summary { margin-bottom: 0.75rem; }
+
+/* Kacheln: ausblenden (Einstellungen → Reihenfolge der Kacheln) und
+   Verbrauch + Wärmepumpe in einer horizontal geteilten Kachel */
+.stat-card.stat-hidden { display: none !important; }
+.stat-card-split {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: 0.5rem;
+  padding-top: 0.9rem; padding-bottom: 0.9rem;
+}
+.stat-card-split > .stat-header { grid-column: 1 / -1; margin-bottom: 0.35rem; }
+.stat-card-split .stat-value { font-size: 1.25rem; white-space: nowrap; }
+.stat-card-split .stat-unit { font-size: 0.8rem; margin-left: 0.15rem; }
+.stat-rowlabel { font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.stat-half-hp {
+  grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline;
+  column-gap: 0.5rem; border-top: 1px solid var(--border-primary); margin-top: 0.35rem; padding-top: 0.35rem;
+}
+.stat-half-hp > .stat-header { display: none; }
+.stat-half-hp .stat-sub { grid-column: 1 / -1; margin-top: 0; font-size: 0.7rem; }
+.stat-half-hp .stat-sub:empty { display: none; }
+.stat-order-list input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: var(--accent-blue); cursor: pointer; }
+.stat-order-list li.is-hidden span { opacity: 0.45; text-decoration: line-through; }
+.stat-order-list li.is-sub { margin-left: 1.5rem; }
+.stat-order-list li small { color: var(--text-secondary); font-size: 0.7rem; }
