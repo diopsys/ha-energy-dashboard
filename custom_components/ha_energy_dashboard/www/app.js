@@ -2939,7 +2939,7 @@ class EnergyDashboard {
         this.config.ui.refreshInterval = s.ui.refreshInterval;
       }
       // Darstellung: Logo-Farbe, Untertitel, erster Reiter, Reihenfolge der Kacheln
-      for (const key of ['logoColor', 'logoSubtitle', 'statOrder', 'hiddenStats', 'language']) {
+      for (const key of ['logoColor', 'logoSubtitle', 'logoLink', 'statOrder', 'hiddenStats', 'language']) {
         if (typeof s.ui?.[key] === 'string') {
           if (!this.config.ui) this.config.ui = {};
           this.config.ui[key] = s.ui[key];
@@ -3043,6 +3043,7 @@ class EnergyDashboard {
     // Darstellung
     setVal('set-logo-color', this.config.ui?.logoColor);
     setVal('set-logo-subtitle', this.config.ui?.logoSubtitle);
+    setVal('set-logo-link', this.config.ui?.logoLink);
     setVal('set-language', this.config.ui?.language || 'de');
     this.populateStatOrderList();
     setVal('set-rate-entity-dyn', this.config.rateEntity || '');
@@ -3108,6 +3109,13 @@ class EnergyDashboard {
       const text = ui.logoSubtitle === '-' ? '' : (ui.logoSubtitle || 'Dashboard');
       sub.textContent = text;
       sub.style.display = text ? '' : 'none';
+    }
+    const logo = document.getElementById('energy-logo');
+    if (logo) {
+      const link = (ui.logoLink || '').trim();
+      logo.classList.toggle('logo-link', !!link);
+      logo.title = link ? link : '';
+      logo.onclick = link ? () => openLogoLink(link) : null;
     }
     const mainLabel = document.getElementById('nav-main-label');
     if (mainLabel) mainLabel.textContent = (this.isGasEnabled() || this.isWaterEnabled()) ? this.t('Strom') : 'Dashboard';
@@ -3344,6 +3352,7 @@ class EnergyDashboard {
             refreshInterval: (parseFloat(getVal('set-refresh-interval')) || 30) * 1000,
             logoColor: getVal('set-logo-color'),
             logoSubtitle: getVal('set-logo-subtitle'),
+            logoLink: getVal('set-logo-link'),
             language: getVal('set-language') || 'de',
             statOrder: [...document.querySelectorAll('#set-stat-order li')].map(li => li.dataset.stat).join(', '),
             hiddenStats: [...document.querySelectorAll('#set-stat-order li')].filter(li => !li.querySelector('input').checked).map(li => li.dataset.stat).join(', '),
@@ -3478,6 +3487,22 @@ class EnergyDashboard {
 document.addEventListener('DOMContentLoaded', () => {
   window.dashboard = new EnergyDashboard();
 });
+
+// Logo-Link: HA-Pfade (/…) im HA-Frontend (Elternfenster) ohne Neuladen öffnen,
+// volle Adressen (https://…) im ganzen Fenster
+function openLogoLink(link) {
+  try {
+    const top = window.parent;
+    if (link.startsWith('/') && top !== window) {
+      top.history.pushState(null, '', link);
+      top.dispatchEvent(new CustomEvent('location-changed', { detail: { replace: false } }));
+    } else {
+      window.top.location.href = link;
+    }
+  } catch (e) {
+    window.top.location.href = link;
+  }
+}
 
 // ☰ öffnet das HA-Menü. Das Panel-Element im
 // HA-Frontend (Elternfenster) sendet dasselbe Ereignis wie HAs eigener Menüknopf.

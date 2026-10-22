@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **Logo-Link** (Einstellungen → Darstellung): Tippen auf das Logo öffnet eine einstellbare Seite,
+  z. B. die eigene HA-Startseite. HA-Pfade (`/…`) öffnen ohne Neuladen im HA-Frontend,
+  volle Adressen (`https://…`) im ganzen Fenster; leer = wie bisher.
+
 ## [1.6.1] - 2026-10-18
 
 ### Fixed

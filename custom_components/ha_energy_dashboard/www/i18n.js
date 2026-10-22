@@ -261,6 +261,10 @@ window.I18N_TEXTS = {
   'Text neben „Energy“; leer lassen für „Dashboard“, „-“ blendet ihn aus': {
     en: 'Text next to “Energy”; leave empty for “Dashboard”, “-” hides it',
   },
+  'Logo-Link': { en: 'Logo link' },
+  'Tippen auf das Logo öffnet diese Seite, z. B. /lovelace/0 oder https://…; leer = nichts': {
+    en: 'Tapping the logo opens this page, e.g. /lovelace/0 or https://…; empty = nothing',
+  },
   'Kacheln': { en: 'Tiles' },
   'Haken = anzeigen, ▲/▼ = Reihenfolge; gilt nach dem Speichern. Mit Wärmepumpe teilt sich die Verbrauchs-Kachel mit ihr.': {
     en: 'Tick = show, ▲/▼ = order; applies after saving. With a heat pump, the consumption tile is shared with it.',

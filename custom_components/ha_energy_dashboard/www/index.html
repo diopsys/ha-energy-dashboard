@@ -7,7 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <link rel="stylesheet" href="styles.css?v=46">
+    <link rel="stylesheet" href="styles.css?v=47">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
@@ -23,7 +23,7 @@
                 <button class="ha-menu-btn" id="ha-menu-btn" aria-label="Home-Assistant-Menü">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/></svg>
                 </button>
-                <div class="energy-logo">
+                <div class="energy-logo" id="energy-logo">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                         <rect x="4" y="4" width="6" height="6" rx="1" fill="currentColor"/>
                         <rect x="14" y="4" width="6" height="6" rx="1" fill="currentColor"/>
@@ -1046,6 +1046,10 @@
                         <input type="text" class="settings-input" id="set-logo-subtitle" placeholder="Dashboard">
                     </div>
                     <div class="settings-field">
+                        <label>Logo-Link<span class="settings-hint">Tippen auf das Logo öffnet diese Seite, z. B. /lovelace/0 oder https://…; leer = nichts</span></label>
+                        <input type="text" class="settings-input" id="set-logo-link" placeholder="/lovelace/0">
+                    </div>
+                    <div class="settings-field">
                         <label>Kacheln<span class="settings-hint">Haken = anzeigen, ▲/▼ = Reihenfolge; gilt nach dem Speichern. Mit Wärmepumpe teilt sich die Verbrauchs-Kachel mit ihr.</span></label>
                         <ul class="stat-order-list" id="set-stat-order"></ul>
                     </div>
@@ -1178,7 +1182,7 @@
             </div>
         </div>
     </div>
-    <script src="i18n.js?v=4"></script>
-    <script src="app.js?v=61"></script>
+    <script src="i18n.js?v=5"></script>
+    <script src="app.js?v=62"></script>
 </body>
 </html>
