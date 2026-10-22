@@ -3504,15 +3504,3 @@ function openLogoLink(link) {
   }
 }
 
-// ☰ öffnet das HA-Menü. Das Panel-Element im
-// HA-Frontend (Elternfenster) sendet dasselbe Ereignis wie HAs eigener Menüknopf.
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('ha-menu-btn')?.addEventListener('click', () => {
-    try {
-      const host = window.frameElement?.getRootNode()?.host || window.frameElement;
-      host?.dispatchEvent(new CustomEvent('hass-toggle-menu', { bubbles: true, composed: true }));
-    } catch (e) {
-      console.warn('HA-Menü nicht erreichbar:', e.message);
-    }
-  });
-});
