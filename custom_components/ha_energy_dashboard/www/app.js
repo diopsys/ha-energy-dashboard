@@ -3112,7 +3112,7 @@ class EnergyDashboard {
     }
     const logo = document.getElementById('energy-logo');
     if (logo) {
-      const link = (ui.logoLink || '').trim();
+      const link = safeLogoLink(ui.logoLink);
       logo.classList.toggle('logo-link', !!link);
       logo.title = link ? link : '';
       logo.onclick = link ? () => openLogoLink(link) : null;
@@ -3488,9 +3488,16 @@ document.addEventListener('DOMContentLoaded', () => {
   window.dashboard = new EnergyDashboard();
 });
 
-// Logo-Link: HA-Pfade (/…) im HA-Frontend (Elternfenster) ohne Neuladen öffnen,
-// volle Adressen (https://…) im ganzen Fenster
-function openLogoLink(link) {
+// Logo-Link: nur HA-Pfade (/…, nicht //…) oder http(s)-Adressen, sonst '' (kein Link)
+function safeLogoLink(value) {
+  const link = typeof value === 'string' ? value.trim() : '';
+  return /^\/(?!\/)/.test(link) || /^https?:\/\//i.test(link) ? link : '';
+}
+
+// HA-Pfade im HA-Frontend (Elternfenster) ohne Neuladen öffnen, volle Adressen im ganzen Fenster
+function openLogoLink(value) {
+  const link = safeLogoLink(value);
+  if (!link) return;
   try {
     const top = window.parent;
     if (link.startsWith('/') && top !== window) {
