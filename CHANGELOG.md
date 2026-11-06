@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Keine falschen „Login attempt failed“-Meldungen mehr:** Abgelaufene Zugriffstokens werden vor
+  REST- und WebSocket-Anfragen erneuert statt erst nach einem Fehler 401; gleichzeitige Anfragen
+  teilen sich eine Erneuerung.
+
 ## [1.6.1] - 2026-10-18
 
 ### Fixed
