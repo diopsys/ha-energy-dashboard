@@ -329,6 +329,7 @@ class EnergyDashboard {
 
   connectWebSocket() {
     return new Promise((resolve) => {
+      this._wsReady = false;
       // Close stale socket first
       if (this.ws) {
         try { this.ws.onclose = null; this.ws.close(); } catch (_) {}
@@ -349,6 +350,7 @@ class EnergyDashboard {
       this.ws.onopen = () => {};
       this.ws.onerror = () => { done(); };
       this.ws.onclose = () => {
+        this._wsReady = false;
         done();
         // Only auto-reconnect if page is visible
         if (document.visibilityState === 'visible') {
@@ -366,6 +368,7 @@ class EnergyDashboard {
             }
           });
         } else if (msg.type === 'auth_ok') {
+          this._wsReady = true;
           done();
         } else if (msg.type === 'auth_invalid') {
           console.error('WebSocket auth failed');
@@ -380,12 +383,22 @@ class EnergyDashboard {
     });
   }
 
-  wsCommand(cmd) {
+  // Verbindung bei Bedarf neu aufbauen. onclose verbindet nur bei sichtbarer
+  // Seite neu – ging die Verbindung im Hintergrund (Ruhezustand) verloren, blieb
+  // sie weg und alle Statistikabfragen lieferten still leere Listen (0 kWh).
+  async ensureWebSocket() {
+    const ok = () => !!(this.ws && this.ws.readyState === WebSocket.OPEN && this._wsReady);
+    if (ok()) return true;
+    if (!this._wsConnecting) {
+      this._wsConnecting = this.connectWebSocket().finally(() => { this._wsConnecting = null; });
+    }
+    await this._wsConnecting;
+    return ok();
+  }
+
+  async wsCommand(cmd) {
+    if (!(await this.ensureWebSocket())) throw new Error('WebSocket not connected');
     return new Promise((resolve, reject) => {
-      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-        reject(new Error('WebSocket not connected'));
-        return;
-      }
       const id = this.wsId++;
       cmd.id = id;
       this.wsPending[id] = { resolve, reject };
@@ -2811,6 +2824,9 @@ class EnergyDashboard {
         document.body.classList.add('page-hidden');
       } else {
         document.body.classList.remove('page-hidden');
+        if (!(this.ws && this.ws.readyState === WebSocket.OPEN && this._wsReady)) {
+          this.ensureWebSocket().then((ok) => { if (ok) this.loadPeriodData(this.currentPeriod); });
+        }
       }
     });
     window.addEventListener('pageshow', (e) => {
